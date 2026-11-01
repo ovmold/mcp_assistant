@@ -1,0 +1,29 @@
+[project]
+name = "mcp_assistant"
+version = "0.1.0"
+description = "Интеллектуальный ассистент на базе GigaChat и протокола Model Context Protocol (MCP). Умеет искать тикеты в базе данных (БД), работать с базой знаний (md-файлы), изменять статусы и добавлять комментарии, запрашивая подтверждение на выполнение этих действий"
+readme = "README.md"
+authors = [
+    { name = "Ольга Молдованова", email = "ovmold@yandex.ru" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "anyio>=4.12.0",
+    "gigachat>=0.2.3",
+    "gradio>=6.30.0",
+    "mcp[cli]>=2.3.0",
+    "sentence-transformers>=6.1.0",
+]
+
+[tool.uv]
+package = false         
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]

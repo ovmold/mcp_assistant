@@ -1,0 +1,29 @@
+{
+  "model": "GigaChat-3-Ultra",
+  "api_base": "https://api.giga.chat/v1",
+  "max_steps": 8,
+  "session_timeout": 300.0,
+  "llm_timeout": 120.0,
+  "max_retries": 3,
+  "servers": [
+    {
+      "name": "tickets",
+      "transport": {
+        "type": "stdio",
+        "command": "python",
+        "args": ["-m", "servers.tickets"] 
+      },
+      "tool_timeout": 30.0,
+      "write_tools": ["update_status", "add_comment"]
+    },
+    {
+      "name": "knowledge",
+      "transport": {
+        "type": "streamable-http",
+        "url": "http://127.0.0.1:8000/mcp"
+      },
+      "tool_timeout": 30.0,
+      "write_tools": []
+    }
+  ]
+}
