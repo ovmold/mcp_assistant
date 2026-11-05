@@ -1,36 +1,59 @@
-"""
-Управление подключениями к MCP-серверам.
-
-Отвечает за:
-- Подключение к нескольким серверам (stdio, streamable-http).
-- Получение списков инструментов.
-- Вызов инструментов с таймаутом.
-- Корректное закрытие соединений.
-"""
+"""Подключения к MCP-серверам и вызовы их возможностей."""
 
 import asyncio
-import os
-
 from contextlib import AsyncExitStack
+
 from mcp import Client
-from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.client.stdio import (
+    StdioServerParameters,
+    get_default_environment,
+    stdio_client,
+)
 from mcp.client.streamable_http import streamable_http_client
-from mcp.types import Tool, CallToolResult
+from mcp.types import (
+    CallToolResult,
+    GetPromptResult,
+    Prompt,
+    ReadResourceResult,
+    Resource,
+    ResourceTemplate,
+    Tool,
+)
+
+
+def _format_exception(error: Exception) -> str:
+    if isinstance(error, ExceptionGroup):
+        return "; ".join(
+            _format_exception(suberror) for suberror in error.exceptions
+        )
+    message = str(error)
+    return f"{type(error).__name__}: {message}" if message else type(error).__name__
+
 
 class MCPClient:
     def __init__(self, config: dict):
         self._servers = {s["name"]: s for s in config["servers"]}
         self._clients: dict[str, Client] = {}
-        self._tools: dict[str, list] = {}
-        self._exit_stack = AsyncExitStack()  # ← Единый стек для всего
+        self._tools: dict[str, list[Tool]] = {}
+        self._resources: dict[str, list[Resource]] = {}
+        self._resource_templates: dict[str, list[ResourceTemplate]] = {}
+        self._prompts: dict[str, list[Prompt]] = {}
+        self._exit_stack = AsyncExitStack()
 
     async def connect_all(self) -> None:
-        """Подключается ко всем серверам по очереди."""
+        """Подключает все серверы или сообщает обо всех ошибках подключения."""
+        errors = {}
         for name, cfg in self._servers.items():
             try:
                 await self._connect(name, cfg)
             except Exception as e:
-                print(f"'{name}' не подключен: {e}")
+                errors[name] = e
+
+        if errors:
+            details = "; ".join(
+                f"{name}: {_format_exception(error)}" for name, error in errors.items()
+            )
+            raise RuntimeError(f"Ошибки подключения к MCP-серверам: {details}")
         if not self._clients:
             raise RuntimeError("Не удалось подключиться ни к одному серверу")
 
@@ -39,41 +62,35 @@ class MCPClient:
 
         if transport["type"] == "stdio":
             merged_env = {
-            **os.environ,                   # ← обязательно первым
-            **(transport.get("env") or {}), # ← явный env поверх
-}
+                **get_default_environment(),
+                **(transport.get("env") or {}),
+            }
             params = StdioServerParameters(
                 command=transport["command"],
                 args=transport.get("args", []),
                 env=merged_env,
             )
-            # stdio_client возвращает асинхронный контекстный менеджер
             transport_ctx = stdio_client(params)
-
         elif transport["type"] == "streamable-http":
-            transport_ctx = streamable_http_client(
-                url=transport["url"],
-            )
+            transport_ctx = streamable_http_client(url=transport["url"])
         else:
             raise ValueError(f"Неизвестный транспорт: {transport['type']}")
 
-        # Создает Client, передавая ему транспортный контекст
         client = Client(transport_ctx)
-
-        # Входим в контекст клиента. 
-        # Client сам выполнит initialize() (рукопожатие) при входе.
         await self._exit_stack.enter_async_context(client)
 
-        # Получаем список инструментов
-        result = await client.list_tools()
+        tools = await client.list_tools()
+        resources = await client.list_resources()
+        templates = await client.list_resource_templates()
+        prompts = await client.list_prompts()
 
         self._clients[name] = client
-        self._tools[name] = result.tools
+        self._tools[name] = tools.tools
+        self._resources[name] = resources.resources
+        self._resource_templates[name] = templates.resource_templates
+        self._prompts[name] = prompts.prompts
 
     async def close_all(self) -> None:
-        """Закрывает все соединения через единый стек."""
-        # AsyncExitStack корректно закроет все Client и их транспорты 
-        # в обратном порядке, в той же задаче, где они открывались.
         try:
             await self._exit_stack.aclose()
         except Exception as e:
@@ -81,10 +98,32 @@ class MCPClient:
         finally:
             self._clients.clear()
             self._tools.clear()
+            self._resources.clear()
+            self._resource_templates.clear()
+            self._prompts.clear()
 
     def get_all_tools(self) -> dict[str, list[Tool]]:
-        """{server_name: [tools]}"""
         return dict(self._tools)
+
+    def get_all_resources(self) -> dict[str, list[Resource]]:
+        return dict(self._resources)
+
+    def get_all_resource_templates(self) -> dict[str, list[ResourceTemplate]]:
+        return dict(self._resource_templates)
+
+    def get_all_prompts(self) -> dict[str, list[Prompt]]:
+        return dict(self._prompts)
+
+    def _get_client(self, server_name: str) -> Client:
+        client = self._clients.get(server_name)
+        if not client:
+            raise ValueError(f"Сервер '{server_name}' не подключён")
+        return client
+
+    def _get_timeout(self, server_name: str, timeout: float | None) -> float:
+        if timeout is not None:
+            return timeout
+        return self._servers[server_name].get("tool_timeout", 30.0)
 
     async def call_tool(
         self,
@@ -93,18 +132,33 @@ class MCPClient:
         arguments: dict,
         timeout: float | None = None,
     ) -> CallToolResult:
-        """Вызывает инструмент с таймаутом."""
-        client = self._clients.get(server_name)
-        if not client:
-            raise ValueError(f"Сервер '{server_name}' не подключён")
-
-        if timeout is None:
-            timeout = self._servers[server_name].get("tool_timeout", 30.0)
-
+        client = self._get_client(server_name)
         return await asyncio.wait_for(
             client.call_tool(tool_name, arguments),
-            timeout=timeout,
+            timeout=self._get_timeout(server_name, timeout),
         )
 
-    
+    async def read_resource(
+        self,
+        server_name: str,
+        uri: str,
+        timeout: float | None = None,
+    ) -> ReadResourceResult:
+        client = self._get_client(server_name)
+        return await asyncio.wait_for(
+            client.read_resource(uri),
+            timeout=self._get_timeout(server_name, timeout),
+        )
 
+    async def get_prompt(
+        self,
+        server_name: str,
+        prompt_name: str,
+        arguments: dict[str, str],
+        timeout: float | None = None,
+    ) -> GetPromptResult:
+        client = self._get_client(server_name)
+        return await asyncio.wait_for(
+            client.get_prompt(prompt_name, arguments),
+            timeout=self._get_timeout(server_name, timeout),
+        )

@@ -9,7 +9,7 @@ from mcp.server.mcpserver.prompts.base import UserMessage, AssistantMessage
 from mcp_assistant.servers.tickets import (
     search_tickets, get_ticket, add_comment, update_status,
     get_ticket_resource, get_ticket_stats_resource,
-    analyze_ticket
+    analyze_ticket, _db_cursor
 )
 
 
@@ -82,6 +82,36 @@ def test_search_case_insensitive(temp_db):
     assert len(r1) == len(r2)
 
 
+@pytest.mark.parametrize("query", ["платёж", "платеж"])
+def test_search_normalizes_russian_e_and_yo(temp_db, query):
+    conn = sqlite3.connect(temp_db)
+    conn.execute(
+        "INSERT INTO tickets (id, subject, body, status, priority, client, "
+        "created_at, updated_at, tags, issue_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (6, "Платёжный шлюз недоступен", "Ошибка платёжного шлюза",
+         "open", "high", "Acme", "2026-10-14T12:00:00", "2026-10-14T12:00:00",
+         "payment", "bug"),
+    )
+    conn.commit()
+    conn.close()
+
+    result = search_tickets(query)
+
+    assert any(ticket.id == 6 for ticket in result)
+
+
+def test_search_leading_hyphen_is_literal_text(temp_db):
+    result = search_tickets("-502")
+
+    assert result
+    assert all("502" in ticket.subject or "502" in ticket.body for ticket in result)
+
+
+@pytest.mark.parametrize("query", ["оплата OR 502", "OR", "AND", "NOT"])
+def test_search_fts_operators_are_literal_text(temp_db, query):
+    assert isinstance(search_tickets(query), list)
+
+
 def test_search_empty_query_raises(temp_db):
     """Пустой запрос должен выбрасывать ToolError."""
     with pytest.raises(ToolError, match=r"(?i)пуст"):
@@ -113,6 +143,53 @@ def test_search_filter_by_customer(temp_db):
     result = search_tickets("502", customer="Globex")
     assert len(result) >= 1
     assert all(t.client == "Globex" for t in result)
+
+
+@pytest.mark.parametrize("filters,expected_ids", [
+    ({"status": "open"}, {1, 3, 5}),
+    ({"priority": "high"}, {1, 4}),
+    ({"customer": "Globex"}, {1, 4}),
+])
+def test_search_with_filters_only(temp_db, filters, expected_ids):
+    result = search_tickets(**filters)
+
+    assert {ticket.id for ticket in result} == expected_ids
+
+
+@pytest.mark.parametrize("query", [None, "", "   "])
+def test_search_with_empty_query_and_filters(temp_db, query):
+    result = search_tickets(
+        query=query,
+        status="open",
+        priority="high",
+        customer="Globex",
+    )
+
+    assert [ticket.id for ticket in result] == [1]
+
+
+@pytest.mark.parametrize("filters,expected_ids", [
+    ({"created_from": "2026-10-14"}, {1, 2}),
+    ({"created_to": "2026-10-13"}, {3, 4, 5}),
+    ({"created_from": "2026-10-10", "created_to": "2026-10-14"}, {2, 3, 4}),
+])
+def test_search_by_created_date(temp_db, filters, expected_ids):
+    result = search_tickets(**filters)
+
+    assert {ticket.id for ticket in result} == expected_ids
+
+
+def test_search_rejects_invalid_date(temp_db):
+    with pytest.raises(ToolError, match=r"created_from.*ISO 8601"):
+        search_tickets(created_from="не дата")
+
+
+def test_search_rejects_reversed_date_range(temp_db):
+    with pytest.raises(ToolError, match=r"created_from.*позже"):
+        search_tickets(
+            created_from="2026-10-15",
+            created_to="2026-10-14",
+        )
 
 
 def test_search_limit(temp_db):
@@ -231,43 +308,62 @@ def test_search_tickets_returns_empty_messages_and_logs(temp_db):
 # ============================================================================
 
 def test_add_comment(temp_db):
-    """Комментарий сохраняется в таблицу messages."""
+    """Комментарий сохраняется и обновляет updated_at тикета."""
     id = 2
-    add_comment(id, "Клиент подтвердил проблему", author="support")
+    previous_updated_at = get_ticket(id).updated_at
+    result = add_comment(id, "Клиент подтвердил проблему", author="support")
 
     conn = sqlite3.connect(temp_db)
-    rows = conn.execute(
-        "SELECT author, text FROM messages WHERE ticket_id = ?", 
-        (id,)
-    ).fetchall()
+    row = conn.execute(
+        "SELECT id, author, text, created_at FROM messages WHERE ticket_id = ?",
+        (id,),
+    ).fetchone()
+    ticket_updated_at = conn.execute(
+        "SELECT updated_at FROM tickets WHERE id = ?",
+        (id,),
+    ).fetchone()[0]
     conn.close()
 
-    assert len(rows) == 1
-    assert rows[0] == ("support", "Клиент подтвердил проблему")
+    assert row[1:3] == ("support", "Клиент подтвердил проблему")
+    assert result.ticket_id == 2
+    assert result.comment_id == row[0]
+    assert result.added is True
+    assert ticket_updated_at == row[3]
+    assert ticket_updated_at != previous_updated_at
+
+
+def test_add_comment_requires_nonempty_author(temp_db):
+    with pytest.raises(ToolError, match=r"(?i)author пуст"):
+        add_comment(2, "Комментарий", author="   ")
 
 
 def test_add_comment_to_missing_ticket(temp_db):
     """Комментарий к несуществующему тикету вызывает ToolError."""
     with pytest.raises(ToolError, match=r"(?i)не найден"):
-        add_comment(9999, "текст")
+        add_comment(9999, "текст", author="support")
 
 # ============================================================================
 # update_status
 # ============================================================================
 
 def test_update_status(temp_db):
-    """Статус обновляется, и добавляется комментарий с причиной."""
-    update_status(1, "closed", "Проблема решена")
+    """Статус обновляется, добавляется комментарий и возвращается результат."""
+    result = update_status(1, "closed", "Проблема решена")
 
     conn = sqlite3.connect(temp_db)
     status = conn.execute("SELECT status FROM tickets WHERE id = 1").fetchone()[0]
     msg = conn.execute(
-        "SELECT text FROM messages WHERE ticket_id = 1"
+        "SELECT id, text FROM messages WHERE ticket_id = 1"
     ).fetchone()
     conn.close()
 
     assert status == "closed"
-    assert msg[0] == "Проблема решена"
+    assert msg[1] == "Проблема решена"
+    assert result.ticket_id == 1
+    assert result.old_status == "open"
+    assert result.new_status == "closed"
+    assert result.updated is True
+    assert result.comment_id == msg[0]
 
 
 def test_update_status_invalid_value(temp_db):
@@ -280,6 +376,50 @@ def test_update_status_missing_ticket(temp_db):
     """Смена статуса у несуществующего тикета вызывает ToolError."""
     with pytest.raises(ToolError, match=r"(?i)не найден"):
         update_status(9999, "closed", "причина")
+
+
+def test_update_status_rejects_unchanged_status(temp_db):
+    previous_updated_at = get_ticket(1).updated_at
+
+    with pytest.raises(ToolError, match=r"уже имеет статус open"):
+        update_status(1, "open", "Статус уже установлен")
+
+    ticket = get_ticket(1)
+    assert ticket.status == "open"
+    assert ticket.updated_at == previous_updated_at
+    assert ticket.messages == []
+
+
+def test_update_status_cannot_reopen_closed_ticket(temp_db):
+    update_status(1, "closed", "Закрыт")
+
+    with pytest.raises(ToolError, match=r"closed на open"):
+        update_status(1, "open", "Повторное открытие")
+
+    ticket = get_ticket(1)
+    assert ticket.status == "closed"
+    assert len(ticket.messages) == 1
+
+
+def test_db_cursor_enables_foreign_keys(temp_db):
+    with _db_cursor() as cursor:
+        assert cursor.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+        with pytest.raises(sqlite3.IntegrityError):
+            cursor.execute(
+                "INSERT INTO messages (ticket_id, author, text, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (9999, "support", "orphan", "2026-10-14T12:00:00"),
+            )
+
+
+def test_fts_update_trigger_is_limited_to_indexed_columns(temp_db):
+    conn = sqlite3.connect(temp_db)
+    sql = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE name = 'tickets_au'"
+    ).fetchone()[0]
+    conn.close()
+
+    assert "AFTER UPDATE OF subject, body" in " ".join(sql.split())
 
 
 def test_update_status_fts_sync(temp_db):

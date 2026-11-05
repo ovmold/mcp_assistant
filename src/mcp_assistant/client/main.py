@@ -106,6 +106,8 @@ async def main() -> int:
             max_steps=config.get("max_steps", 8),
             always_confirm_tools=always_confirm_by_server,
             max_history_messages=config.get("max_history_messages", 40),
+            max_history_chars=config.get("max_history_chars", 60_000),
+            max_tool_result_chars=config.get("max_tool_result_chars", 12_000),
         )
 
         # 7. Запуск выбранного интерфейса

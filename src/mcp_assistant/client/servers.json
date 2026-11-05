@@ -1,6 +1,8 @@
 {
   "max_steps": 8,
   "max_history_messages": 40,
+  "max_history_chars": 60000,
+  "max_tool_result_chars": 12000,
   "session_timeout": 300.0,
   "llm_timeout": 120.0,
   "servers": [

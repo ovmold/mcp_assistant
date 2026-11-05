@@ -71,6 +71,7 @@ def temp_kb(tmp_path, monkeypatch):
     knowledge_mod._EMBEDDER = None
     knowledge_mod._KB_EMBEDDINGS = None
     knowledge_mod._KB_FILENAMES = []
+    knowledge_mod._KB_BM25 = None
 
     return kb_dir
 

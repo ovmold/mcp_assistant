@@ -53,17 +53,33 @@ CREATE VIRTUAL TABLE tickets_fts USING fts5(
     tokenize='unicode61'
 );
 
--- Триггеры для синхронизации
+-- Триггеры для синхронизации; индекс нормализует регистр и ё/е
 CREATE TRIGGER tickets_ai AFTER INSERT ON tickets BEGIN
-    INSERT INTO tickets_fts(rowid, subject, body) VALUES (new.id, new.subject, new.body);
+    INSERT INTO tickets_fts(rowid, subject, body) VALUES (
+        new.id,
+        replace(lower(new.subject), 'ё', 'е'),
+        replace(lower(new.body), 'ё', 'е')
+    );
 END;
 
-CREATE TRIGGER tickets_au AFTER UPDATE ON tickets BEGIN
-    INSERT INTO tickets_fts(tickets_fts, rowid, subject, body) VALUES ('delete', old.id, old.subject, old.body);
-    INSERT INTO tickets_fts(rowid, subject, body) VALUES (new.id, new.subject, new.body);
+CREATE TRIGGER tickets_au AFTER UPDATE OF subject, body ON tickets BEGIN
+    INSERT INTO tickets_fts(tickets_fts, rowid, subject, body) VALUES (
+        'delete', old.id,
+        replace(lower(old.subject), 'ё', 'е'),
+        replace(lower(old.body), 'ё', 'е')
+    );
+    INSERT INTO tickets_fts(rowid, subject, body) VALUES (
+        new.id,
+        replace(lower(new.subject), 'ё', 'е'),
+        replace(lower(new.body), 'ё', 'е')
+    );
 END;
 
 CREATE TRIGGER tickets_ad AFTER DELETE ON tickets BEGIN
-    INSERT INTO tickets_fts(tickets_fts, rowid, subject, body) VALUES ('delete', old.id, old.subject, old.body);
+    INSERT INTO tickets_fts(tickets_fts, rowid, subject, body) VALUES (
+        'delete', old.id,
+        replace(lower(old.subject), 'ё', 'е'),
+        replace(lower(old.body), 'ё', 'е')
+    );
 END;
 """

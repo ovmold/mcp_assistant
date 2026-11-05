@@ -68,6 +68,8 @@ def load_config(path: str | Path = "servers.json") -> dict:
 
     config.setdefault("max_steps", 8)
     config.setdefault("max_history_messages", 40)
+    config.setdefault("max_history_chars", 60_000)
+    config.setdefault("max_tool_result_chars", 12_000)
     config.setdefault("session_timeout", 300.0)
     config.setdefault("llm_timeout", 60.0)
 

@@ -150,8 +150,8 @@ async def main() -> None:
     )
     llm = LLMClient(giga_instance=giga, model=model)
 
-    write_tools_by_server = {
-        server["name"]: set(server.get("write_tools", []))
+    always_confirm_tools = {
+        server["name"]: set(server.get("always_confirm_by_server", []))
         for server in config["servers"]
     }
 
@@ -198,7 +198,7 @@ async def main() -> None:
                     tracer=EvalTracer(), 
                     confirmation=EvalConfirmation(scenario),
                     max_steps=config.get("max_steps", 8),
-                    write_tools_by_server=write_tools_by_server,
+                    always_confirm_tools=always_confirm_tools,
                 )
                 
                 # 4. Запуск

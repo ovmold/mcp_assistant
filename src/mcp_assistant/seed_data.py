@@ -2,13 +2,10 @@
 
 from datetime import datetime, timezone
 
+from mcp_assistant.storage.models import TICKET_PRIORITIES, TICKET_STATUSES
+
 # Чтобы даты были стабильны между запусками
 NOW = datetime(2026, 10, 14, 12, 0, tzinfo=timezone.utc)
-
-def _iso(dt: datetime) -> str:
-    """Возвращает ISO 8601 без микросекунд."""
-    return dt.replace(microsecond=0).isoformat()
-
 
 RANDOM_SEED = 42
 N_TICKETS = 80
@@ -22,10 +19,8 @@ CLIENTS = [
     "Wonka Industries", "Gringotts", "Duff Brewery", "Vandelay Industries",
 ]
 
-# Статусы тикетов
-STATUSES = ["open", "pending", "resolved", "closed"]
-# Приоритеты тикетов
-PRIORITIES = ["low", "medium", "high", "critical"]
+STATUSES = list(TICKET_STATUSES)
+PRIORITIES = list(TICKET_PRIORITIES)
 # Уровни логирования
 LEVELS = ["DEBUG", "INFO", "WARN", "ERROR"]
 

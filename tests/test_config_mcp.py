@@ -63,6 +63,8 @@ def test_defaults_are_set(tmp_path):
     # Глобальные дефолты
     assert config["max_steps"] == 8
     assert config["max_history_messages"] == 40
+    assert config["max_history_chars"] == 60_000
+    assert config["max_tool_result_chars"] == 12_000
     assert config["session_timeout"] == 300.0
     assert config["llm_timeout"] == 60.0
     assert "max_retries" not in config

@@ -31,6 +31,15 @@ class FakeMCPClient:
     def get_all_tools(self):
         return {}
 
+    def get_all_resources(self):
+        return {}
+
+    def get_all_resource_templates(self):
+        return {}
+
+    def get_all_prompts(self):
+        return {}
+
     async def close_all(self):
         self.closed = True
 

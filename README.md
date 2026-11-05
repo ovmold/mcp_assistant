@@ -1,198 +1,176 @@
 # MCP-ассистент инженера поддержки
 
-Интеллектуальный ассистент на базе GigaChat и протокола Model Context Protocol (MCP). Умеет искать тикеты в базе данных (БД), работать с базой знаний (md-файлы), изменять статусы тикетов и добавлять к ним комментарии, запрашивая подтверждение на выполнение этих действий.
+Ассистент на базе GigaChat и Model Context Protocol (MCP). Он ищет тикеты в SQLite, работает с Markdown-базой знаний, добавляет комментарии и изменяет статусы. Независимые read-only инструменты могут выполняться параллельно через GigaChat SDK 0.2.4. Операции записи выполняются последовательно и требуют подтверждения пользователя.
 
-## Быстрый старт
+## Требования
 
-### 1. Требования
-*   Python 3.12+
-*   Пакетный менеджер [uv](https://docs.astral.sh/uv/)
-*   Ключ авторизации GigaChat (получить можно в [личном кабинете](https://developers.sber.ru/portal/products/gigachat-api))
-*   ~3 ГБ свободного места для зависимостей (включая PyTorch)
+- Python 3.12+;
+- пакетный менеджер [uv](https://docs.astral.sh/uv/);
+- ключ GigaChat из [личного кабинета](https://developers.sber.ru/portal/products/gigachat-api);
+- около 3 ГБ свободного места для зависимостей, включая PyTorch.
 
-### 2. Установка
-Склонируйте репозиторий и установите зависимости:
+## Установка и настройка
+
 ```bash
 git clone https://github.com/ovmold/mcp_assistant.git
 cd mcp_assistant
-uv sync     # Первый запуск может занять 5-10 минут (скачивается PyTorch)
+uv sync
 ```
 
-### 3. Настройка
-Создайте файл `.env` в каталоге `mcp_assistant` и заполните его на основе примера, приведенного в файле `.env.example`
+Скопируйте `.env.example` в `.env` и заполните как минимум:
 
-### 4. Инициализация базы данных
-Данные о тикетах хранятся в SQLite БД `tickets.db` в следующих таблицах:\
-`tickets(id, subject, body, status, priority, client, created_at, updated_at, tags)`\
-`messages(id, ticket_id, author, text, created_at)`\
-`logs(id, ticket_id, level, message, created_at)`\
-Для заполнения БД тестовыми тикетами выполните в каталоге `mcp_assistant` команду:\
-`uv run python -m mcp_assistant.seed`\
-После выполнения этой команды в каталоге `mcp_assistant` будут созданы:
-* каталог `data`, содержащий
-  * `tickets.db` - файл SQLite БД
-  * `kb/*.md` - каталог с md-файлами базы знаний
-* каталог `traces` - каталог для хранения JSONL-файла трассировки сессии (пример записи сессии в файле `example_session.jsonl`)
-
-Для удаления старых данных и пересоздания БД и базы знаний выполните:\
-`uv run python -m mcp_assistant.seed --reset`
-
-### 5. Запуск
-1. Запуск Streamable HTTP сервера:
-```bash 
-uv run python -m mcp_assistant.servers.knowledge
+```dotenv
+GIGACHAT_AUTH_KEY=...
+GIGACHAT_BASE_URL=https://api.giga.chat/v1
+MODEL=GigaChat-3-Ultra
 ```
-2. Запуск агента в одном из двух интерфейсов:
-  * веб-интерфейс (Gradio)
-    ```bash
-    uv run python -m mcp_assistant.client.main --ui gradio [--host HOST] [--port PORT]
-    ```
-    По умолчанию HOST = 127.0.0.1, PORT = 7860\
-    Откройте в браузере: http://127.0.0.1:7860
-  * консольный интерфейс (CLI)
-    ```bash
-    uv run python -m mcp_assistant.client.main --ui cli
-    ```
 
-**Пример использования консольного интерфейса:**
+В `.env` также можно изменить `DATA_DIR`, `TRACE_DIR`, `KB_DIR` и `DB_PATH`.
+
+## Тестовые данные
+
+```bash
+uv run python -m mcp_assistant.seed
+```
+
+Каждый запуск полностью пересоздаёт БД и базу знаний. Дополнительные Markdown-файлы в `KB_DIR` удаляются. Не запускайте seed с данными, которые нужно сохранить.
+
+Создаются:
+
+- `data/tickets.db` — тикеты, сообщения и логи;
+- `data/kb/*.md` — статьи базы знаний;
+- `traces/` — каталог трассировки.
+
+Основные таблицы:
 
 ```text
-============================================================  
-MCP-агент готов. Введите запрос или /exit для выхода.
-============================================================
-
-Вы: Привет
-
-Агент: Здравствуйте! Я помогу вам найти информацию в базе тикетов или базе знаний. С чем нужна помощь?
-
-Вы: Найди тикет 1 и выведи его содержимое
-
-Агент: Тикет 1:
-
-**Тема:** Ошибка 502 при оплате
-**Описание:** При попытке оплаты возникает 502 Bad Gateway
-**Статус:** open
-**Приоритет:** high
-**Клиент:** Globex
-**Дата создания:** 2026-10-15T10:00:00
-**Дата обновления:** 2026-10-15T10:00:00
-**Теги:** payment,502
-**Тип проблемы:** bug
-
-Вы: /exit
-Выход.
+tickets(id, subject, body, status, priority, client,
+        created_at, updated_at, tags, issue_type)
+messages(id, ticket_id, author, text, created_at)
+logs(id, ticket_id, level, message, created_at)
 ```
 
-## Архитектура
+## Структура проекта
 
-Проект построен по клиент-серверной архитектуре с использованием протокола MCP. Агент выступает в роли оркестратора, который связывает LLM и внешние инструменты.
+- `src/mcp_assistant/client/agent.py` — агентный цикл, история и вызовы инструментов.
+- `src/mcp_assistant/client/agent_prompts.py` — системный промпт агента.
+- `src/mcp_assistant/client/mcp_client.py` — подключения к MCP-серверам, вызовы инструментов, чтение ресурсов и получение промптов.
+- `src/mcp_assistant/client/ui/` — CLI и Gradio.
+- `src/mcp_assistant/client/servers.json` — серверы, лимиты и таймауты.
+- `src/mcp_assistant/servers/tickets.py` — поиск и изменение тикетов.
+- `src/mcp_assistant/servers/knowledge.py` — гибридный поиск BM25 + эмбеддинги и чтение статей.
+- `src/mcp_assistant/storage/` — модели, SQL-схема и timestamps.
+- `src/mcp_assistant/seed.py`, `seed_data.py` — тестовые данные.
+- `tests/` — unit- и интеграционные тесты.
+- `evals/` — сценарии оценки агента.
 
-```mermaid
-graph TD
-    User([Пользователь]) <--> |CLI / Gradio| UI[UI Слой]
-    
-    subgraph Client ["Клиентская часть (Python)"]
-        UI <--> |Сообщение| Agent[Agent: Оркестратор]
-        Agent -.-> |Трассировка| Trace[(Traces / JSONL)]
-        Agent <--> |Вызов инструментов| MCP_C[MCP Client]
-    end
-    
-    subgraph LLM_Provider ["Внешний сервис"]
-        Agent <--> |Function Calling| LLM[GigaChat API]
-    end
-    
-    subgraph Servers ["MCP Серверы (Отдельные процессы)"]
-        MCP_C <--> |stdio / SSE| MCP_S1[MCP Server: Tickets]
-        MCP_C <--> |stdio / SSE| MCP_S2[MCP Server: KB]
-    end
-    
-    subgraph Data ["Хранилища данных"]
-        MCP_S1 <--> DB[(SQLite DB)]
-        MCP_S2 <--> Files[(Markdown Files)]
-    end
+Поток обработки запроса:
 
-    classDef ui fill:#e1f5fe,stroke:#0288d1,stroke-width:2px,color:#000000
-    classDef agent fill:#f3e5f5,stroke:#8e24aa,stroke-width:2px,color:#000000
-    classDef llm fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#000000
-    classDef mcp fill:#e8f5e9,stroke:#388e3c,stroke-width:2px,color:#000000
-    classDef data fill:#fafafa,stroke:#616161,stroke-width:2px,stroke-dasharray: 5 5,color:#000000
-
-    class UI ui;
-    class Agent,MCP_C agent;
-    class LLM llm;
-    class MCP_S1,MCP_S2 mcp;
-    class DB,Files,Trace data;
+```text
+CLI / Gradio → Agent → GigaChat → MCP Client → MCP Server → SQLite / Markdown
 ```
 
-## Запуск unit-тестов
-Все команды запускаются из каталога `mcp_assistant`.
-### Все тесты
+Сервер тикетов использует stdio, сервер базы знаний — Streamable HTTP.
+
+## Запуск
+
+Сначала в отдельном терминале запустите сервер базы знаний:
+
 ```bash
-uv run pytest -vv
+uv run python -m mcp_assistant.servers.knowledge
 ```
 
-### Только тикеты (без MCP-слоя)
+При первом запуске сервер скачивает модель эмбеддингов и кодирует статьи до приёма MCP-запросов. Последующие запуски используют локальный кэш модели.
+
+Для запуска агента должны подключиться все настроенные MCP-серверы. При недоступности любого из них запуск прекращается с конкретной причиной ошибки.
+
+Затем запустите ассистента в CLI:
+
 ```bash
-uv run pytest tests/test_tickets.py -vv
+uv run python -m mcp_assistant.client.main --ui cli
 ```
 
-### Только база знаний статей (без MCP-слоя)
+Или с веб-интерфейсом:
+
 ```bash
-uv run pytest tests/test_knowledge.py -vv
+uv run python -m mcp_assistant.client.main --ui gradio
 ```
 
-### Только MCP-интеграция
+Gradio по умолчанию доступен по адресу `http://127.0.0.1:7860`; используйте `--host` и `--port` для изменения.
+
+В CLI доступны `/reset` и `/clear` для очистки истории, `/exit` и `/quit` для выхода.
+
+Примеры запросов:
+
+```text
+Найди тикет 1 и выведи его содержимое.
+Найди открытые тикеты high от Globex, созданные на этой неделе.
+Найди тикет 1 и статью про ошибку 502 в одном пакете параллельных вызовов.
+```
+
+## Тестирование
+
+Все тесты:
+
 ```bash
-uv run pytest tests/test_mcp_layer.py -vv
+uv run pytest -q
 ```
 
-### Только агент
+Выборочно:
+
 ```bash
-uv run pytest tests/test_agent.py -vv
+uv run pytest tests/test_agent.py -q
+uv run pytest tests/test_tickets.py -q
+uv run pytest tests/test_knowledge.py -q
+uv run pytest tests/test_mcp_layer.py -q
+uv run pytest tests/test_gradio_ui.py -q
 ```
 
-## Запуск evals
+Проверка сборки:
 
-Проект содержит фреймворк для автоматической оценки качества агента.\
-Запуск сценариев из каталога `mcp_assistant`:
 ```bash
-uv run python evals/run_evals.py [--scenario SCENARIO] [--file SCENARIO_FILE] [--runs RUNS]
+uv build
 ```
-При запуске можно указать ID конкретного сценария (`--scenario SCENARIO`), имя YAML-файла со сценариями (`--file SCENARIO_FILE`, по умолчанию - `evals/scenarios.yaml`) и/или количество прогонов на сценарий (`--runs RUNS`, по умолчанию - 3)
-По итогам тестов выводится информация о стабильности (Success Rate), точности выбора инструментов и среднем количестве шагов. Пример вывода результатов приведен в файле `EVALS.md`.
-До запуска сценариев необходимо запустить сервер `knowledge` (см. [5. Запуск](#5-Запуск) в разделе "Быстрый старт")
+
+## Оценка агента
+
+Evals выполняют реальные запросы к GigaChat и используют отдельную временную БД. Перед запуском необходимы настройки из `.env` и запущенный сервер базы знаний.
+
+```bash
+uv run python evals/run_evals.py
+```
+
+Параметры:
+
+```bash
+uv run python evals/run_evals.py \
+  --scenario SCENARIO_ID \
+  --file evals/scenarios.yaml \
+  --runs 3
+```
+
+- `--scenario` — ID одного сценария;
+- `--file` — YAML-файл со сценариями;
+- `--runs` — количество повторений, по умолчанию 3.
+
+Отчёт включает Success Rate, точность выбора инструментов, среднее число шагов, время и расход токенов. Примеры вывода приведены в `EVALS.md`.
 
 ## Технологический стек
 
-**Клиент:**
-* `gigachat` — официальный SDK для GigaChat
-* `gradio` — веб-интерфейс
-* `mcp[cli]` — клиент протокола MCP
-
-**Агент и инструменты:**
-* `anyio` — асинхронный рантайм
-* `sentence-transformers` — эмбеддинги для поиска по базе знаний
-* `python-dotenv` — конфигурация через `.env`
-* `pyyaml` — сценарии Evals
-
-**Тесты:**
-* `pytest`, `pytest-asyncio` — unit-тесты
+- `gigachat` — GigaChat SDK;
+- `mcp[cli]` — Model Context Protocol;
+- `gradio`, `fastapi`, `uvicorn` — веб-интерфейс;
+- `sentence-transformers`, `torch`, `numpy` — семантический поиск;
+- `anyio` — асинхронная работа;
+- `python-dotenv`, `pyyaml` — окружение и сценарии;
+- `pytest`, `pytest-asyncio` — тесты.
 
 ## Известные ограничения
-* Проблемы с параллелизмом (многопользовательский режим): В текущей реализации один экземпляр MCPClient создается при старте приложения и живет все время. Если одновременно работают несколько пользователей в Gradio, они могут мешать друг другу при работе со stateful-инструментами.
 
-* SQLite блокировки: При очень интенсивных параллельных запросах SQLite может выдавать ошибку database is locked. Для продакшена рекомендуется перейти на PostgreSQL.
-
-* Контекстное окно: Если агент делает слишком много шагов (вызовов инструментов), история сообщений может превысить контекстное окно GigaChat. Сейчас это ограничено параметром max_steps=8 в конфиге.
-
-* Отсутствие стриминга: Агент возвращает ответ целиком, а не по токенам. Из-за этого в Gradio пользователь видит только «крутящийся спиннер», пока агент думает.
-
-* Tracer пишет в session.jsonl. В CLI одна сессия = один файл. В Gradio все сессии пишут в один файл, в результате строки разных сессий перемешиваются.
- 
-* инструмент search_tickets (сервер tickets) ищет тикеты только с одним значением статуса, приоритета и/или клиента
-
-* в evals используются md-файлы из продуктовой базы знаний
-
-
-
-
+- Один долгоживущий `MCPClient` обслуживает приложение; для параллельной многопользовательской работы со stateful-инструментами нужны дополнительные проверки.
+- При интенсивных параллельных записях SQLite может отвечать `database is locked`; для production рассмотрите PostgreSQL.
+- Лимиты сообщений, символов истории и результатов инструментов уменьшают риск превышения контекста, но не заменяют учёт токенов модели.
+- Стриминг отсутствует: ответ появляется целиком после завершения работы агента.
+- Все события записываются в общий `traces/session.jsonl`; события разных Gradio-сессий могут перемешиваться.
+- `query` в `search_tickets` ищет только по `subject` и `body`; каждый фильтр принимает одно значение.
+- Evals используют статьи из текущей рабочей базы знаний.

@@ -11,6 +11,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from sentence_transformers import SentenceTransformer
+import math
 import numpy as np
 import re
 
@@ -24,6 +25,7 @@ _EMBEDDER = None
 _KB_EMBEDDINGS = None
 _KB_FILENAMES = None
 _KB_ARTICLES = None
+_KB_BM25 = None
 
 def clean_markdown(text: str) -> str:
     """
@@ -99,10 +101,54 @@ def clean_markdown(text: str) -> str:
 
     return text.strip()
 
+
+def _tokenize(text: str) -> list[str]:
+    return re.findall(r"\w+", text.lower(), flags=re.UNICODE)
+
+
+class _BM25Index:
+    """Небольшой BM25-индекс для лексических совпадений без внешних сервисов."""
+
+    def __init__(self, documents: list[str]):
+        self._documents = [_tokenize(document) for document in documents]
+        self._doc_lengths = np.array([len(document) for document in self._documents])
+        self._avg_length = (
+            float(self._doc_lengths.mean()) if self._doc_lengths.size else 0.0
+        )
+        self._doc_freqs = {}
+        for document in self._documents:
+            for token in set(document):
+                self._doc_freqs[token] = self._doc_freqs.get(token, 0) + 1
+
+    def scores(self, query: str) -> np.ndarray:
+        scores = np.zeros(len(self._documents), dtype=float)
+        if not self._documents or self._avg_length == 0:
+            return scores
+
+        for token in _tokenize(query):
+            doc_freq = self._doc_freqs.get(token, 0)
+            if not doc_freq:
+                continue
+            inverse_doc_freq = math.log(
+                1 + (len(self._documents) - doc_freq + 0.5) / (doc_freq + 0.5)
+            )
+            for index, document in enumerate(self._documents):
+                frequency = document.count(token)
+                if not frequency:
+                    continue
+                length_normalizer = 1.5 * (
+                    1 - 0.75 + 0.75 * self._doc_lengths[index] / self._avg_length
+                )
+                scores[index] += inverse_doc_freq * (
+                    frequency * 2.5 / (frequency + length_normalizer)
+                )
+        return scores
+
+
 # ----------------------------- Tools ------------------------
 def _init_kb():
-    """Ленивая инициализация: загрузка модели и кодирование документов."""
-    global _EMBEDDER, _KB_EMBEDDINGS, _KB_FILENAMES, _KB_ARTICLES
+    """Загружает модель и кодирует документы при старте или первом использовании."""
+    global _EMBEDDER, _KB_EMBEDDINGS, _KB_FILENAMES, _KB_ARTICLES, _KB_BM25
 
     if _EMBEDDER is not None:
         return
@@ -125,13 +171,14 @@ def _init_kb():
     # База знаний пуста
     if not articles:
         _KB_EMBEDDINGS = None
+        _KB_BM25 = None
         return
 
     _KB_FILENAMES = list(articles.keys())
     _KB_ARTICLES = articles
 
-    # 3. Кодирует все документы в эмбеддинги
     texts = [articles[name] for name in _KB_FILENAMES]
+    _KB_BM25 = _BM25Index(texts)
     # normalize_embeddings=True нужен для косинусной близости через скалярное произведение
     _KB_EMBEDDINGS = _EMBEDDER.encode(
         texts,
@@ -181,9 +228,13 @@ def search_kb(query: str, top_k: int = 3) -> list[str]:
     # 1. Кодирует запрос
     query_embedding = _EMBEDDER.encode(query, normalize_embeddings=True)
 
-    # 2. Считает косинусную близость через скалярное произведение
-    # (т.к. векторы нормализованы, скалярное произведение = косинусная близость)
-    scores = np.dot(_KB_EMBEDDINGS, query_embedding)
+    semantic_scores = np.dot(_KB_EMBEDDINGS, query_embedding)
+    lexical_scores = _KB_BM25.scores(query)
+    max_lexical = float(lexical_scores.max()) if lexical_scores.size else 0.0
+    if max_lexical > 0:
+        scores = 0.3 * semantic_scores + 0.7 * lexical_scores / max_lexical
+    else:
+        scores = semantic_scores
 
     # 3. Сортирует и берет top_k
     top_indices = np.argsort(scores)[::-1][:top_k]
@@ -252,6 +303,11 @@ def get_article_resource(article_type: str) -> str:
     except PermissionError as e:
         raise PermissionError("Ошибка: нет прав на чтение статьи.") from e
 
-if __name__ == "__main__":
+def main() -> None:
     conf.load_env(conf.PROJECT_DIR / ".env")
+    _init_kb()
     mcp.run(transport="streamable-http", host=conf.HOST, port=conf.PORT)
+
+
+if __name__ == "__main__":
+    main()

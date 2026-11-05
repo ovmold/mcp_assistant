@@ -14,13 +14,22 @@ from mcp.server.mcpserver.prompts.base import UserMessage, AssistantMessage
 from mcp.types import ToolAnnotations
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import sqlite3
 import re
 
 from mcp_assistant import config as conf
-from mcp_assistant import seed_data
-from mcp_assistant.storage.models import Ticket, Message, LogEntry
+from mcp_assistant.storage.models import (
+    TICKET_STATUSES,
+    CommentAddResult,
+    LogEntry,
+    Message,
+    StatusUpdateResult,
+    Ticket,
+    TicketPriority,
+    TicketStatus,
+)
+from mcp_assistant.storage.timestamps import to_iso
 
 mcp = MCPServer("tickets")
 
@@ -29,6 +38,7 @@ mcp = MCPServer("tickets")
 def _db_cursor() -> Iterator[sqlite3.Cursor]:
     """Гарантирует закрытие соединения и курсора при любом исходе."""
     conn = sqlite3.connect(conf.DB_PATH)
+    conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     try:
@@ -36,6 +46,22 @@ def _db_cursor() -> Iterator[sqlite3.Cursor]:
     finally:
         cursor.close()
         conn.close()
+
+def _parse_date_filter(value: str | None, name: str) -> tuple[datetime, bool] | None:
+    if value is None or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError as e:
+        raise ToolError(
+            f"Параметр {name} должен быть датой или датой-временем в ISO 8601."
+        ) from e
+
+    date_only = bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", value.strip()))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc), date_only
+
 
 # ----------------------------- Tools ------------------------
 
@@ -45,76 +71,81 @@ def _db_cursor() -> Iterator[sqlite3.Cursor]:
     )
 )
 def search_tickets(
-    query: str,
+    query: str | None = None,
     limit: int = 10,
-    status: str = None,
-    priority: str = None,
-    customer: str = None,
+    status: TicketStatus | None = None,
+    priority: TicketPriority | None = None,
+    customer: str | None = None,
+    created_from: str | None = None,
+    created_to: str | None = None,
 ) -> list[Ticket]:
-    """
-    Ищет тикеты по ключевому слову в теме или описании (полнотекстовый поиск FTS5).
-    Дополнительно может фильтровать по статусу, приоритету или заказчику.
+    """Ищет тикеты по ключевым словам и необязательным фильтрам.
 
-    Args:
-        query: Ключевое слово или фраза для поиска. Не может быть пустым.
-        limit: Максимальное количество возвращаемых тикетов (1–100).
-        status: Необязательный фильтр по статусу ('open', 'closed' и т.д.).
-        priority: Необязательный фильтр по приоритету ('high', 'low' и т.д.).
-        customer: Необязательный фильтр по имени заказчика.
-
-    Returns:
-        Список найденных тикетов, отсортированных по релевантности (bm25),
-        затем по дате создания (сначала новые). Поля messages и logs в результатах поиска
-        всегда пустые — для получения переписки и лога вызовите get_ticket(id).
-    Raises:
-        ToolError: Если ключевое слово или фраза для поиска (query) пустое.
+    Фильтры: status, priority, customer и диапазон created_at через
+    created_from/created_to в ISO 8601. Дата без времени в created_to включает
+    весь этот день. query необязателен при наличии любого фильтра.
     """
-    # Ограничивает limit
     limit = max(1, min(limit, conf.N_SEARCH_LIMIT))
+    filters = [
+        ("status", status.strip() if status else None),
+        ("priority", priority.strip() if priority else None),
+        ("client", customer.strip() if customer else None),
+    ]
+    filters = [(column, value) for column, value in filters if value]
 
-    # Проверка на пустой запрос
-    if not query or not query.strip():
+    from_filter = _parse_date_filter(created_from, "created_from")
+    to_filter = _parse_date_filter(created_to, "created_to")
+    if from_filter and to_filter and from_filter[0] > to_filter[0]:
+        raise ToolError("created_from не может быть позже created_to.")
+
+    to_operator = "<="
+    if to_filter is not None:
+        to_date, date_only = to_filter
+        if date_only:
+            to_date += timedelta(days=1)
+            to_operator = "<"
+        to_filter = (to_date, date_only)
+
+    safe_query = ""
+    if query and query.strip():
+        words = re.findall(r"\w+", query.lower().replace("ё", "е"), flags=re.UNICODE)
+        words = [word[:5] if len(word) >= 6 else word for word in words]
+        safe_query = " ".join(f'"{word}"*' for word in words)
+
+    if not safe_query and not filters and not from_filter and not to_filter:
         raise ToolError(
-            "Параметр query пуст. Пожалуйста, уточните у пользователя, "
-            "что именно искать в тикетах (например: 'ошибка 502', "
-            "'сброс пароля', 'оплата')."
+            "Параметр query пуст и не заданы фильтры. Уточните у пользователя "
+            "ключевые слова, статус, приоритет, клиента или диапазон дат."
         )
 
-    # Очищает запрос от спецсимволов FTS5 (кавычки, звёздочки, скобки)
-    # иначе MATCH может выдать синтаксическую ошибку.
-    safe_query = re.sub(r'[^\w\s\-]', ' ', query).strip()
-    if not safe_query:
-        return []
-
-    # Грубый стемминг: обрезает длинные слова до 5 символов:
-    # "оплата" -> "оплат", "ошибка" -> "ошиб"
-    words = [w[:5] + '*' if len(w) >= 6 else w + '*' for w in safe_query.split()]
-    safe_query = ' '.join(words)
-
-    # Базовый WHERE: MATCH по FTS5
-    where_clause = "tickets_fts MATCH ?"
-    params = [safe_query]
-
-    # Дополнительные фильтры (по основной таблице tickets)
-    if status is not None:
-        where_clause += " AND t.status = ?"
-        params.append(status)
-    if priority is not None:
-        where_clause += " AND t.priority = ?"
-        params.append(priority)
-    if customer is not None:
-        where_clause += " AND t.client = ?"
-        params.append(customer)
-
+    where_parts = []
+    params = []
+    if safe_query:
+        where_parts.append("tickets_fts MATCH ?")
+        params.append(safe_query)
+    for column, value in filters:
+        where_parts.append(f"t.{column} = ?")
+        params.append(value)
+    if from_filter:
+        where_parts.append("datetime(t.created_at) >= datetime(?)")
+        params.append(to_iso(from_filter[0]))
+    if to_filter:
+        where_parts.append(f"datetime(t.created_at) {to_operator} datetime(?)")
+        params.append(to_iso(to_filter[0]))
     params.append(limit)
 
-    # Запрос: JOIN с FTS5, ранжирование по bm25
+    if safe_query:
+        from_clause = "tickets t JOIN tickets_fts fts ON t.id = fts.rowid"
+        order_clause = "bm25(tickets_fts), t.created_at DESC"
+    else:
+        from_clause = "tickets t"
+        order_clause = "t.created_at DESC"
+
     sql = f"""
         SELECT t.*
-        FROM tickets t
-        JOIN tickets_fts fts ON t.id = fts.rowid
-        WHERE {where_clause}
-        ORDER BY bm25(tickets_fts), t.created_at DESC
+        FROM {from_clause}
+        WHERE {" AND ".join(where_parts)}
+        ORDER BY {order_clause}
         LIMIT ?
     """
 
@@ -166,10 +197,10 @@ def get_ticket(ticket_id: int) -> Ticket:
     )
 )
 def add_comment(
-    ticket_id: int, 
-    text: str, 
-    author: str = "support"
-) -> None:
+    ticket_id: int,
+    text: str,
+    author: str,
+) -> CommentAddResult:
     """
     Добавляет комментарий в таблицу messages к существующему тикету.
     
@@ -185,19 +216,23 @@ def add_comment(
             к которому добавляется комментарий. Пример: 1042.
         text: Текст комментария. Может содержать любой текст, 
             включая переносы строк и специальные символы.
-        author: Автор комментария. По умолчанию 'support'. 
-            Используйте другие значения для указания конкретного пользователя, 
-            например 'user_123' или 'manager' или клиента - 'customer'.
+        author: Обязательный автор комментария, например 'support',
+            'user_123', 'manager' или 'customer'. Если автор неизвестен,
+            агент должен запросить его у пользователя до вызова инструмента.
     
     Returns:
-        None: Функция ничего не возвращает при успешном выполнении.
+        CommentAddResult: ID тикета и нового комментария, added=True после commit.
     
     Raises:
-        ToolError: 
+        ToolError:
             Если тикет с указанным ticket_id не найден в базе данных.
-            Если текст комментария пуст.
+            Если текст комментария или автор пусты.
     """
-    # Проверка на пустой комментарий
+    if not author or not author.strip():
+        raise ToolError(
+            "Параметр author пуст. Уточните у пользователя автора комментария."
+        )
+
     if not text or not text.strip():
         raise ToolError(
             "Параметр text пуст. Пожалуйста, уточните у пользователя "
@@ -210,12 +245,20 @@ def add_comment(
         if cursor.fetchone() is None:
             raise ToolError(f"Тикет {ticket_id} не найден.")
 
+        created_at = to_iso(datetime.now(tz=timezone.utc))
         cursor.execute(
             "INSERT INTO messages (ticket_id, author, text, created_at) "
             "VALUES (?, ?, ?, ?)",
-            (ticket_id, author, text, seed_data._iso(datetime.now(tz=timezone.utc)))
+            (ticket_id, author, text, created_at),
+        )
+        comment_id = cursor.lastrowid
+        cursor.execute(
+            "UPDATE tickets SET updated_at = ? WHERE id = ?",
+            (created_at, ticket_id),
         )
         cursor.connection.commit()
+
+    return CommentAddResult(ticket_id=ticket_id, comment_id=comment_id, added=True)
 
 
 @mcp.tool(
@@ -225,11 +268,11 @@ def add_comment(
     )
 )
 def update_status(
-    ticket_id: int, 
-    status: str, 
-    comment: str, 
-    author: str = "support"
-) -> None:
+    ticket_id: int,
+    status: TicketStatus,
+    comment: str,
+    author: str = "support",
+) -> StatusUpdateResult:
     """
     Обновляет статус тикета и добавляет комментарий с объяснением изменения.
     
@@ -240,8 +283,8 @@ def update_status(
     2. Добавляет комментарий с указанием автора и причины изменения в таблицу messages.
     
     Инструмент сначала проверяет, что тикет существует и что переданный
-    статус является допустимым. Если проверка не пройдена — изменения
-    не применяются.
+    статус является допустимым. Вызов с неизменным статусом и переход
+    closed → open запрещены. Если проверка не пройдена — изменения не применяются.
     
     Args:
         ticket_id: Уникальный идентификатор тикета (целое число),
@@ -260,10 +303,11 @@ def update_status(
             пользователя, например 'user_123' или 'manager' или клиента - 'customer'.
     
     Returns:
-        None: Функция ничего не возвращает при успешном выполнении.
+        StatusUpdateResult: старый и новый статус, ID комментария,
+        updated=True после успешного commit.
     
     Raises:
-        ToolError: 
+        ToolError:
             - Если тикет с указанным ticket_id не найден.
             - Если переданный status не входит в список допустимых значений.
             - Если текст комментария пуст.
@@ -278,14 +322,20 @@ def update_status(
         )
     
     with _db_cursor() as cursor:
-        cursor.execute("SELECT 1 FROM tickets WHERE id = ?", (ticket_id,))
-        if cursor.fetchone() is None:
+        cursor.execute("SELECT status FROM tickets WHERE id = ?", (ticket_id,))
+        row = cursor.fetchone()
+        if row is None:
             raise ToolError(f"Тикет {ticket_id} не найден.")
+        old_status = row["status"]
 
-        if status not in seed_data.STATUSES:
+        if status not in TICKET_STATUSES:
             raise ToolError(f"Неправильный статус: {status}.")
+        if old_status == status:
+            raise ToolError(f"Тикет {ticket_id} уже имеет статус {status}.")
+        if old_status == "closed" and status == "open":
+            raise ToolError("Запрещена смена статуса с closed на open.")
 
-        changed_at = seed_data._iso(datetime.now(tz=timezone.utc))
+        changed_at = to_iso(datetime.now(tz=timezone.utc))
         cursor.execute(
             "UPDATE tickets SET status = ?, updated_at = ? WHERE id = ?",
             (status, changed_at, ticket_id),
@@ -295,7 +345,16 @@ def update_status(
             "VALUES (?, ?, ?, ?)",
             (ticket_id, author, comment, changed_at),
         )
+        comment_id = cursor.lastrowid
         cursor.connection.commit()
+
+    return StatusUpdateResult(
+        ticket_id=ticket_id,
+        old_status=old_status,
+        new_status=status,
+        updated=True,
+        comment_id=comment_id,
+    )
 
 # ----------------------------- Resources ------------------------
 @mcp.resource("ticket://{ticket_id}")

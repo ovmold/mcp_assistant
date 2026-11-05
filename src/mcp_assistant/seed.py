@@ -6,8 +6,9 @@
   - kb/         (Markdown): статьи базы знаний
 
 Запуск из каталога `mcp_assistant`:
-  python -m  mcp_assistant.seed            # обычная генерация
-  python -m  mcp_assistant.seed --reset    # удалить старые данные и пересоздать
+  python -m mcp_assistant.seed
+
+Каждый запуск заново создаёт БД и базу знаний, удаляя дополнительные статьи.
 """
 
 import argparse
@@ -20,6 +21,7 @@ from mcp_assistant import config as conf
 from mcp_assistant import seed_data
 from mcp_assistant.storage import schema as db
 from mcp_assistant.storage.models import Ticket
+from mcp_assistant.storage.timestamps import to_iso
 
 # ----------------------------- Генерация тикетов ------------------------
 
@@ -57,8 +59,8 @@ def make_tickets(n: int) -> list[Ticket]:
                 status=status,
                 priority=priority,
                 client=client,
-                created_at=seed_data._iso(created),
-                updated_at=seed_data._iso(updated),
+                created_at=to_iso(created),
+                updated_at=to_iso(updated),
                 tags=tags,
                 issue_type=issue_type,
             )
@@ -103,8 +105,8 @@ def make_injection_ticket() -> Ticket:
         status="open",
         priority="critical",
         client="Acme",
-        created_at=seed_data._iso(created),
-        updated_at=seed_data._iso(created + timedelta(hours=2)),
+        created_at=to_iso(created),
+        updated_at=to_iso(created + timedelta(hours=2)),
         tags="payment,502,injection-test",
         issue_type="payment_gateway",
     )
@@ -114,7 +116,7 @@ def make_messages(tickets: list[Ticket]) -> list[tuple]:
     for t in tickets:
         base = datetime.fromisoformat(t.created_at)
         rows.append((
-            t.id, "customer", t.body, seed_data._iso(base),
+            t.id, "customer", t.body, to_iso(base),
         ))
         # 1–3 ответа поддержки
         for k in range(random.randint(1, 3)):
@@ -122,14 +124,14 @@ def make_messages(tickets: list[Ticket]) -> list[tuple]:
                 t.id,
                 "support",
                 random.choice(seed_data.SUPPORT_REPLIES),
-                seed_data._iso(base + timedelta(hours=2 * (k + 1))),
+                to_iso(base + timedelta(hours=2 * (k + 1))),
             ))
             if random.random() < 0.5:
                 rows.append((
                     t.id,
                     "customer",
                     random.choice(seed_data.CUSTOMER_MESSAGES),
-                    seed_data._iso(base + timedelta(hours=2 * (k + 1) + 1)),
+                    to_iso(base + timedelta(hours=2 * (k + 1) + 1)),
                 ))
     return rows
 
@@ -158,7 +160,7 @@ def make_logs(tickets: list[Ticket]) -> list[tuple]:
                 t.id,
                 level,
                 msg,
-                seed_data._iso(ts),
+                to_iso(ts),
             ))
     return rows
 
@@ -210,22 +212,16 @@ def write_db(tickets: list[Ticket]) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Seed данных для ассистента «Облачко»")
-    parser.add_argument("--reset", action="store_true",
-                        help="Удалить tickets.db и kb/ перед генерацией")
     parser.add_argument("--tickets", type=int, default=seed_data.N_TICKETS)
     args = parser.parse_args()
 
-    # Явная инициализация окружения
     conf.load_env(conf.PROJECT_DIR / ".env")
     conf.ensure_dirs()
 
     random.seed(seed_data.RANDOM_SEED)
 
-    if args.reset:
-        if conf.DB_PATH.exists():
-            conf.DB_PATH.unlink()
-        if conf.KB_DIR.exists():
-            shutil.rmtree(conf.KB_DIR)
+    if conf.KB_DIR.exists():
+        shutil.rmtree(conf.KB_DIR)
 
     tickets = make_tickets(args.tickets)
     # Гарантирует наличие injection-тикета с id=1042
