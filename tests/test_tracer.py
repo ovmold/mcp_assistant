@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from client.tracer import Tracer
+from mcp_assistant.client.tracer import Tracer
 
 
 # ============================================================================

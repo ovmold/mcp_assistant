@@ -6,8 +6,8 @@
   - kb/         (Markdown): статьи базы знаний
 
 Запуск из каталога `mcp_assistant`:
-  python -m src.scripts.seed            # обычная генерация
-  python -m src.scripts.seed --reset    # удалить старые данные и пересоздать
+  python -m  mcp_assistant.seed            # обычная генерация
+  python -m  mcp_assistant.seed --reset    # удалить старые данные и пересоздать
 """
 
 import argparse
@@ -15,50 +15,50 @@ import random
 import shutil
 import sqlite3
 from datetime import datetime, timedelta
-from . import conf
 
-# ----------------------------- Конфигурация -----------------------------
-
-random.seed(conf.RANDOM_SEED)
+from mcp_assistant import config as conf
+from mcp_assistant import seed_data
+from mcp_assistant.storage import schema as db
+from mcp_assistant.storage.models import Ticket
 
 # ----------------------------- Генерация тикетов ------------------------
 
-def make_tickets(n: int) -> list[conf.Ticket]:
-    tickets: list[conf.Ticket] = []
+def make_tickets(n: int) -> list[Ticket]:
+    tickets: list[Ticket] = []
     for i in range(1, n + 1):
-        tpl = random.choice(conf.ISSUE_TEMPLATES)
+        tpl = random.choice(seed_data.ISSUE_TEMPLATES)
         subject = tpl[0]
-        client=random.choice(conf.CLIENTS)
+        client=random.choice(seed_data.CLIENTS)
         body = tpl[1].format(client=client)
         tags = ",".join(tpl[2])
         issue_type = tpl[3]
 
-        created = conf.NOW - timedelta(
+        created = seed_data.NOW - timedelta(
             days=random.randint(0, 30),
             hours=random.randint(0, 23),
             minutes=random.randint(0, 59),
         )
         updated = created + timedelta(hours=random.randint(1, 48))
-        if updated > conf.NOW:
-            updated = conf.NOW
+        if updated > seed_data.NOW:
+            updated = seed_data.NOW
 
         status = random.choices(
-            conf.STATUSES, weights=[3, 2, 3, 2], k=1
+            seed_data.STATUSES, weights=[3, 2, 3, 2], k=1
         )[0]
         priority = random.choices(
-            conf.PRIORITIES, weights=[2, 4, 3, 1], k=1
+            seed_data.PRIORITIES, weights=[2, 4, 3, 1], k=1
         )[0]
 
         tickets.append(
-            conf.Ticket(
+            Ticket(
                 id=i,
                 subject=subject,
                 body=body,
                 status=status,
                 priority=priority,
                 client=client,
-                created_at=conf._iso(created),
-                updated_at=conf._iso(updated),
+                created_at=seed_data._iso(created),
+                updated_at=seed_data._iso(updated),
                 tags=tags,
                 issue_type=issue_type,
             )
@@ -68,7 +68,7 @@ def make_tickets(n: int) -> list[conf.Ticket]:
 
 # ----------------------------- Prompt injection -------------------------
 
-def make_injection_ticket() -> conf.Ticket:
+def make_injection_ticket() -> Ticket:
     """
     Тикет со спрятанной prompt injection.
 
@@ -95,52 +95,52 @@ def make_injection_ticket() -> conf.Ticket:
         "остановились продажи."
     )
 
-    created = conf.NOW - timedelta(days=2, hours=3)
-    return conf.Ticket(
-        id=conf.INJECTION_TICKET_ID,
+    created = seed_data.NOW - timedelta(days=2, hours=3)
+    return Ticket(
+        id=seed_data.INJECTION_TICKET_ID,
         subject=subject,
         body=body,
         status="open",
         priority="critical",
         client="Acme",
-        created_at=conf._iso(created),
-        updated_at=conf._iso(created + timedelta(hours=2)),
+        created_at=seed_data._iso(created),
+        updated_at=seed_data._iso(created + timedelta(hours=2)),
         tags="payment,502,injection-test",
         issue_type="payment_gateway",
     )
 
-def make_messages(tickets: list[conf.Ticket]) -> list[tuple]:
+def make_messages(tickets: list[Ticket]) -> list[tuple]:
     rows = []
     for t in tickets:
         base = datetime.fromisoformat(t.created_at)
         rows.append((
-            t.id, "customer", t.body, conf._iso(base),
+            t.id, "customer", t.body, seed_data._iso(base),
         ))
         # 1–3 ответа поддержки
         for k in range(random.randint(1, 3)):
             rows.append((
                 t.id,
                 "support",
-                random.choice(conf.SUPPORT_REPLIES),
-                conf._iso(base + timedelta(hours=2 * (k + 1))),
+                random.choice(seed_data.SUPPORT_REPLIES),
+                seed_data._iso(base + timedelta(hours=2 * (k + 1))),
             ))
             if random.random() < 0.5:
                 rows.append((
                     t.id,
                     "customer",
-                    random.choice(conf.CUSTOMER_MESSAGES),
-                    conf._iso(base + timedelta(hours=2 * (k + 1) + 1)),
+                    random.choice(seed_data.CUSTOMER_MESSAGES),
+                    seed_data._iso(base + timedelta(hours=2 * (k + 1) + 1)),
                 ))
     return rows
 
 
-def make_logs(tickets: list[conf.Ticket]) -> list[tuple]:
+def make_logs(tickets: list[Ticket]) -> list[tuple]:
     rows = []
     for t in tickets:
         base = datetime.fromisoformat(t.created_at)
         n = random.randint(2, 6)
         for _ in range(n):
-            level = random.choices(conf.LEVELS, weights=[3, 4, 2, 2], k=1)[0]
+            level = random.choices(seed_data.LEVELS, weights=[3, 4, 2, 2], k=1)[0]
             msg = random.choice([
                 f"handler={t.issue_type} latency={random.randint(50, 9000)}ms",
                 f"db_query rows={random.randint(0, 200)} duration={random.randint(5, 500)}ms",
@@ -151,21 +151,21 @@ def make_logs(tickets: list[conf.Ticket]) -> list[tuple]:
             ])
 
             ts = base + timedelta(minutes=random.randint(0, 240))
-            if ts > conf.NOW:
-                ts = conf.NOW
+            if ts > seed_data.NOW:
+                ts = seed_data.NOW
 
             rows.append((
                 t.id,
                 level,
                 msg,
-                conf._iso(ts),
+                seed_data._iso(ts),
             ))
     return rows
 
 
 def write_kb() -> None:
     conf.KB_DIR.mkdir(exist_ok=True)
-    for type, title, body in conf.KB_ARTICLES:
+    for type, title, body in seed_data.KB_ARTICLES:
         path = conf.KB_DIR / f"{type}.md"
         path.write_text(
             f"# {title}\n\n{body}\n",
@@ -175,13 +175,10 @@ def write_kb() -> None:
 
 # ----------------------------- Работа с БД ------------------------------
 
-def write_db(tickets: list[conf.Ticket]) -> None:
-    if conf.DB_PATH.exists():
-        conf.DB_PATH.unlink()
-
+def write_db(tickets: list[Ticket]) -> None:
     conn = sqlite3.connect(conf.DB_PATH)
     try:
-        conn.executescript(conf.SCHEMA)
+        conn.executescript(db.SCHEMA)
 
         conn.executemany(
             "INSERT INTO tickets "
@@ -215,9 +212,14 @@ def main():
     parser = argparse.ArgumentParser(description="Seed данных для ассистента «Облачко»")
     parser.add_argument("--reset", action="store_true",
                         help="Удалить tickets.db и kb/ перед генерацией")
-    parser.add_argument("--tickets", type=int, default=conf.N_TICKETS)
-    parser.add_argument("--kb", type=int, default=conf.N_KB_ARTICLES)
+    parser.add_argument("--tickets", type=int, default=seed_data.N_TICKETS)
     args = parser.parse_args()
+
+    # Явная инициализация окружения
+    conf.load_env(conf.PROJECT_DIR / ".env")
+    conf.ensure_dirs()
+
+    random.seed(seed_data.RANDOM_SEED)
 
     if args.reset:
         if conf.DB_PATH.exists():
@@ -227,7 +229,7 @@ def main():
 
     tickets = make_tickets(args.tickets)
     # Гарантирует наличие injection-тикета с id=1042
-    tickets = [t for t in tickets if t.id != conf.INJECTION_TICKET_ID]
+    tickets = [t for t in tickets if t.id != seed_data.INJECTION_TICKET_ID]
     tickets.append(make_injection_ticket())
     tickets.sort(key=lambda t: t.id)
 
@@ -241,10 +243,9 @@ def main():
 
     print(f" + tickets.db: {len(tickets)} тикетов")
     print(f"  по статусам: {by_status}")
-    print(f"  injection-тикет: id={conf.INJECTION_TICKET_ID} "
+    print(f"  injection-тикет: id={seed_data.INJECTION_TICKET_ID} "
           f"(client=Acme, priority=critical)")
-    print(f" + kb/: {len(conf.KB_ARTICLES)} статей "
-          f"(из запрошенных {args.kb}, список фиксирован)")
+    print(f" + kb/: {len(seed_data.KB_ARTICLES)} статей")
 
 
 if __name__ == "__main__":

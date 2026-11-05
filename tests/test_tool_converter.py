@@ -3,17 +3,35 @@
 from types import SimpleNamespace
 
 import pytest
+from mcp.types import ToolAnnotations
 
-from client.tool_converter import ToolConverter
+from mcp_assistant.client.tool_converter import ToolConverter
 
 
-def make_tool(name: str, description: str = "", schema: dict | None = None):
-    """Создает фейковый MCP-инструмент (похожий на mcp.types.Tool)."""
+# ============================================================================
+# Хелперы
+# ============================================================================
+
+def make_tool(
+    name: str,
+    description: str | None = "",
+    schema: dict | None = None,
+    annotations: ToolAnnotations | None = None,
+) -> SimpleNamespace:
+    """Создаёт фейковый MCP-инструмент (похожий на mcp.types.Tool)."""
     return SimpleNamespace(
         name=name,
         description=description,
         input_schema=schema,
+        annotations=annotations,
     )
+
+
+def _converter_with(tool: SimpleNamespace, server: str = "tickets") -> ToolConverter:
+    """Конвертер с одним инструментом — сокращает boilerplate."""
+    conv = ToolConverter()
+    conv.add_server_tools(server, [tool])
+    return conv
 
 
 # ============================================================================
@@ -21,15 +39,14 @@ def make_tool(name: str, description: str = "", schema: dict | None = None):
 # ============================================================================
 
 def test_add_single_tool():
-    """Один инструмент корректно преобразуется в формат OpenAI."""
+    """Один инструмент корректно преобразуется в формат GigaChat."""
     converter = ToolConverter()
     converter.add_server_tools("tickets", [
         make_tool("search", "Поиск тикетов", {"type": "object"}),
     ])
 
-    assert len(converter.tools) == 1
-    func = converter.tools[0]["function"]
-    assert converter.tools[0]["type"] == "function"
+    assert len(converter.gigachat_tools) == 1
+    func = converter.gigachat_tools[0]
     assert func["name"] == "tickets__search"
     assert func["description"] == "Поиск тикетов"
     assert func["parameters"] == {"type": "object"}
@@ -43,8 +60,8 @@ def test_add_multiple_tools():
         make_tool("update_status"),
     ])
 
-    assert len(converter.tools) == 2
-    names = [t["function"]["name"] for t in converter.tools]
+    assert len(converter.gigachat_tools) == 2
+    names = [t["name"] for t in converter.gigachat_tools]
     assert names == ["tickets__search", "tickets__update_status"]
 
 
@@ -54,25 +71,49 @@ def test_add_tools_from_multiple_servers():
     converter.add_server_tools("tickets", [make_tool("search")])
     converter.add_server_tools("kb", [make_tool("search")])
 
-    names = [t["function"]["name"] for t in converter.tools]
+    names = [t["name"] for t in converter.gigachat_tools]
     assert names == ["tickets__search", "kb__search"]
 
 
 def test_missing_description_becomes_empty_string():
     """Если description=None, подставляется пустая строка."""
-    converter = ToolConverter()
-    converter.add_server_tools("srv", [make_tool("t", description=None)])
-
-    assert converter.tools[0]["function"]["description"] == ""
+    converter = _converter_with(make_tool("t", description=None), server="srv")
+    assert converter.gigachat_tools[0]["description"] == ""
 
 
 def test_missing_schema_gets_default():
     """Если input_schema=None, подставляется пустая схема."""
-    converter = ToolConverter()
-    converter.add_server_tools("srv", [make_tool("t", schema=None)])
-
-    params = converter.tools[0]["function"]["parameters"]
+    converter = _converter_with(make_tool("t", schema=None), server="srv")
+    params = converter.gigachat_tools[0]["parameters"]
     assert params == {"type": "object", "properties": {}}
+
+
+def test_empty_tools_list():
+    """Пустой список инструментов не ломает конвертер."""
+    converter = ToolConverter()
+    converter.add_server_tools("srv", [])
+
+    assert converter.gigachat_tools == []
+    assert converter.resolve("srv__anything") is None
+
+
+# ============================================================================
+# get_gigachat_functions
+# ============================================================================
+
+def test_get_gigachat_functions_returns_all_tools():
+    """get_gigachat_functions() возвращает все добавленные инструменты."""
+    converter = _converter_with(make_tool("search"))
+
+    functions = converter.get_gigachat_functions()
+    assert len(functions) == 1
+    assert functions[0]["name"] == "tickets__search"
+
+
+def test_get_gigachat_functions_empty():
+    """Для пустого конвертера возвращает пустой список."""
+    converter = ToolConverter()
+    assert converter.get_gigachat_functions() == []
 
 
 # ============================================================================
@@ -81,30 +122,119 @@ def test_missing_schema_gets_default():
 
 def test_resolve_returns_pair():
     """resolve() возвращает (server_name, original_tool_name)."""
-    converter = ToolConverter()
-    converter.add_server_tools("tickets", [make_tool("search")])
+    converter = _converter_with(make_tool("search"))
 
-    result = converter.resolve("tickets__search")
-    assert result == ("tickets", "search")
+    assert converter.resolve("tickets__search") == ("tickets", "search")
 
 
 def test_resolve_unknown_returns_none():
     """resolve() для неизвестного имени возвращает None."""
-    converter = ToolConverter()
-    converter.add_server_tools("tickets", [make_tool("search")])
+    converter = _converter_with(make_tool("search"))
 
     assert converter.resolve("unknown__tool") is None
     assert converter.resolve("") is None
     assert converter.resolve("tickets__unknown") is None
 
 
-def test_resolve_is_case_sensitive():
-    """resolve() чувствителен к регистру (как и имена инструментов)."""
-    converter = ToolConverter()
-    converter.add_server_tools("tickets", [make_tool("Search")])
+# ============================================================================
+# _raw: хранение исходного Tool
+# ============================================================================
 
-    assert converter.resolve("tickets__Search") == ("tickets", "Search")
-    assert converter.resolve("tickets__search") is None
+def test_raw_stores_original_tool_object():
+    """_raw хранит исходный Tool, а не урезанную копию."""
+    ann = ToolAnnotations(readOnlyHint=False, destructiveHint=True)
+    tool = make_tool("update", annotations=ann)
+
+    converter = _converter_with(tool)
+
+    stored = converter._raw["tickets__update"]
+    assert stored is tool, "_raw должен хранить объект Tool целиком"
+    assert stored.annotations is ann, (
+        "аннотации должны сохраняться — иначе requires_confirmation не работает"
+    )
+
+
+# ============================================================================
+# requires_confirmation
+# ============================================================================
+
+def test_requires_confirmation_unknown_tool_failsafe():
+    """Неизвестный инструмент → подтверждение (fail-safe)."""
+    converter = ToolConverter()
+    needs, reason = converter.requires_confirmation("nope__nope")
+
+    assert needs is True
+    assert reason == "tool not found (fail-safe)"
+
+
+def test_requires_confirmation_no_annotations_failsafe():
+    """Инструмент без аннотаций → подтверждение (fail-safe)."""
+    converter = _converter_with(make_tool("bare", annotations=None))
+
+    needs, reason = converter.requires_confirmation("tickets__bare")
+    assert needs is True
+    assert reason == "no annotations (fail-safe)"
+
+
+def test_requires_confirmation_readonly_returns_false():
+    """readOnlyHint=True → подтверждение НЕ нужно."""
+    converter = _converter_with(make_tool(
+        "read",
+        annotations=ToolAnnotations(readOnlyHint=True),
+    ))
+
+    needs, reason = converter.requires_confirmation("tickets__read")
+    assert needs is False
+    assert reason == "readOnlyHint=True"
+
+
+def test_requires_confirmation_destructive_returns_true():
+    """
+    Главный тест: destructiveHint=True читается из аннотаций.
+
+    Именно здесь падал test_agent.py::test_destructive_tool_confirmation_from_annotations:
+    requires_confirmation возвращал 'write tool (readOnlyHint is not True)'
+    вместо 'destructiveHint=True'.
+    """
+    converter = _converter_with(make_tool(
+        "del",
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True),
+    ))
+
+    needs, reason = converter.requires_confirmation("tickets__del")
+    assert needs is True
+    assert reason == "destructiveHint=True", (
+        f"Ожидался 'destructiveHint=True', получено {reason!r}. "
+        f"Проверьте имя поля в requires_confirmation — должно быть "
+        f"destructiveHint (camelCase), как в ToolAnnotations."
+    )
+
+
+def test_requires_confirmation_additive_write_returns_true():
+    """readOnlyHint=False и destructiveHint=False → подтверждение нужно."""
+    converter = _converter_with(make_tool(
+        "add",
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
+    ))
+
+    needs, reason = converter.requires_confirmation("tickets__add")
+    assert needs is True
+    assert reason == "write tool (readOnlyHint is not True)"
+
+
+def test_requires_confirmation_only_readonly_default():
+    """
+    Только readOnlyHint=False без destructiveHint (None по умолчанию)
+    → трактуется как write tool.
+    """
+    converter = _converter_with(make_tool(
+        "w",
+        annotations=ToolAnnotations(readOnlyHint=False),
+    ))
+
+    needs, reason = converter.requires_confirmation("tickets__w")
+    assert needs is True
+    assert reason == "write tool (readOnlyHint is not True)"
 
 
 # ============================================================================
@@ -122,21 +252,23 @@ def test_full_workflow():
         make_tool("get_article", "Статья"),
     ])
 
-    # Все имена уникальны
-    names = [t["function"]["name"] for t in converter.tools]
+    names = [t["name"] for t in converter.gigachat_tools]
     assert len(names) == len(set(names)) == 3
 
-    # Все имена разрешаются обратно
     for name in names:
         server, tool = converter.resolve(name)
         assert server in ("tickets", "kb")
         assert tool in ("search", "update_status", "get_article")
 
 
-def test_empty_tools_list():
-    """Пустой список инструментов не ломает конвертер."""
+def test_mapping_and_tools_consistent():
+    """Каждый инструмент в gigachat_tools имеет запись в mapping."""
     converter = ToolConverter()
-    converter.add_server_tools("srv", [])
+    converter.add_server_tools("tickets", [
+        make_tool("search"),
+        make_tool("update_status"),
+    ])
+    converter.add_server_tools("kb", [make_tool("get_article")])
 
-    assert converter.tools == []
-    assert converter.resolve("srv__anything") is None
+    names = [t["name"] for t in converter.gigachat_tools]
+    assert set(names) == set(converter.mapping.keys())

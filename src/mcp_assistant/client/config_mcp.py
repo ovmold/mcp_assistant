@@ -3,7 +3,7 @@
 import json
 import os
 from pathlib import Path
-from scripts import conf
+from mcp_assistant import config as conf
 
 def load_config(path: str | Path = "servers.json") -> dict:
     """
@@ -11,7 +11,7 @@ def load_config(path: str | Path = "servers.json") -> dict:
     Для -m-режима добавляет PYTHONPATH, чтобы Python нашел пакет.
 
     Returns:
-        dict с ключами: servers, model, api_base, max_steps, session_timeout.
+        dict с настройками серверов, лимитами агента и таймаутами.
     """
     config_path = Path(path).resolve()
     if not config_path.exists():
@@ -57,21 +57,19 @@ def load_config(path: str | Path = "servers.json") -> dict:
                     else arg
                     for arg in transport.get("args", [])
                 ]
-        elif t_type in ("streamable-http"):
+        elif t_type == "streamable-http":
             if not transport.get("url"):
                 raise ValueError(f"Сервер '{name}': для {t_type} нужен 'url'")
         else:
             raise ValueError(f"Сервер '{name}': неизвестный транспорт '{t_type}'")
 
         server.setdefault("tool_timeout", 30.0)
-        server.setdefault("write_tools", [])
+        server.setdefault("always_confirm_by_server", [])
 
-    config.setdefault("model", "GigaChat-3-Ultra")
-    config.setdefault("api_base", "https://api.giga.chat/v1")
     config.setdefault("max_steps", 8)
+    config.setdefault("max_history_messages", 40)
     config.setdefault("session_timeout", 300.0)
     config.setdefault("llm_timeout", 60.0)
-    config.setdefault("max_retries", 3)
 
     return config
 

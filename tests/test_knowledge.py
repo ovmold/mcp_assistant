@@ -3,7 +3,7 @@
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from servers.knowledge import (
+from mcp_assistant.servers.knowledge import (
     search_kb, 
     get_article, 
     get_article_resource,
@@ -99,3 +99,11 @@ def test_get_article_resource_missing(temp_kb):
     """Отсутствующий ресурс вызывает FileNotFoundError."""
     with pytest.raises(FileNotFoundError, match=r"(?i)не найден"):
         get_article_resource("missing")
+
+
+def test_get_article_resource_invalid_encoding(temp_kb):
+    """Файл в некорректной кодировке вызывает UnicodeDecodeError."""
+    (temp_kb / "broken.md").write_bytes(b"\xff\xfe\xff")
+
+    with pytest.raises(UnicodeDecodeError):
+        get_article_resource("broken")

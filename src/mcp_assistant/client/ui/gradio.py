@@ -1,23 +1,57 @@
-# client/gradio_ui.py
-
 import asyncio
 import json
+import time
+
 import gradio as gr
 
-from client.agent import Agent
-from client.confirmation import GradioConfirmation
+from mcp_assistant.client.agent import Agent
+from mcp_assistant.client.confirmation import GradioConfirmation
 
-# Глобальный словарь для хранения сессий (объекты asyncio нельзя хранить в gr.State)
 _sessions = {}
 
 
-def build_gradio_ui(agent: Agent) -> gr.Blocks:
+def _new_session() -> dict:
+    return {
+        "conf": GradioConfirmation(),
+        "task": None,
+        "last_active": time.monotonic(),
+    }
+
+
+def _remove_session(agent: Agent, session_id: str) -> None:
+    state = _sessions.pop(session_id, None)
+    if state is not None:
+        task = state.get("task")
+        if task is not None and not task.done():
+            task.cancel()
+    agent.reset(session_id)
+
+
+def _remove_expired_sessions(agent: Agent, timeout: float) -> None:
+    """Очищает неактивные сессии при следующем обращении к UI."""
+    now = time.monotonic()
+    for session_id, state in list(_sessions.items()):
+        if now - state.get("last_active", now) > timeout:
+            _remove_session(agent, session_id)
+
+
+def _clear_completed_task(state: dict) -> None:
+    """Освобождает сессию и извлекает исключение фоновой задачи."""
+    task = state.get("task")
+    if task is None or not task.done():
+        return
+    state["task"] = None
+    if not task.cancelled():
+        task.exception()
+
+
+def build_gradio_ui(agent: Agent, session_timeout: float = 300.0) -> gr.Blocks:
     with gr.Blocks(title="MCP Agent") as demo:
         gr.Markdown("### MCP Agent\nАгент может попросить подтверждение — просто напишите «да» или «нет».")
-        
+
         chatbot = gr.Chatbot(height=600)
         msg = gr.Textbox(placeholder="Введите сообщение...", show_label=False)
-        
+
         with gr.Row():
             submit_btn = gr.Button("Отправить", variant="primary")
             clear_btn = gr.Button("Очистить")
@@ -25,48 +59,42 @@ def build_gradio_ui(agent: Agent) -> gr.Blocks:
         async def respond(message: str, history: list, request: gr.Request):
             if history is None:
                 history = []
-                
-            session_id = request.session_hash if request else "default"
-            
-            if session_id not in _sessions:
-                _sessions[session_id] = {
-                    "conf": GradioConfirmation(),
-                    "task": None
-                }
-            
-            state = _sessions[session_id]
-            conf = state["conf"]
-
             if not message or not message.strip():
                 return history, ""
 
             message = message.strip()
+            session_id = request.session_hash if request else "default"
+            _remove_expired_sessions(agent, session_timeout)
 
-            # Проверяет: это ответ на подтверждение или новый запрос?
+            state = _sessions.get(session_id)
+            if state is None:
+                state = _new_session()
+                _sessions[session_id] = state
+            else:
+                state["last_active"] = time.monotonic()
+            _clear_completed_task(state)
+
+            conf = state["conf"]
+
             if state["task"] is not None and conf.pending is not None:
-                # Случай А: пользователь отвечает на запрос подтверждения
                 history.append({"role": "user", "content": message})
                 approved = message.lower() in {"да", "yes", "y", "д"}
                 conf.resolve(approved)
             else:
-                # Случай Б: новый запрос
                 if state["task"] is not None:
-                    # Защита: если задача еще выполняется (не ждет подтверждения)
                     history.append({"role": "user", "content": message})
                     history.append({"role": "assistant", "content": "Подождите, агент ещё работает..."})
                     return history, ""
 
                 history.append({"role": "user", "content": message})
-                
-                inner_task = asyncio.create_task(agent.run(message, confirmation=conf))
-                state["task"] = inner_task
+                state["task"] = asyncio.create_task(
+                    agent.run(message, confirmation=conf, session_id=session_id)
+                )
 
-            # --- ОБЩАЯ ЛОГИКА ОЖИДАНИЯ ---
-            # Ждет либо завершения задачи, либо запроса на подтверждение
             task = state["task"]
             shielded_task = asyncio.shield(task)
             event_task = asyncio.create_task(conf.wait_requested())
-            
+
             try:
                 done, _ = await asyncio.wait(
                     [shielded_task, event_task],
@@ -76,15 +104,15 @@ def build_gradio_ui(agent: Agent) -> gr.Blocks:
                 event_task.cancel()
 
             if shielded_task in done:
-                # Задача полностью завершилась (получен финальный ответ)
                 state["task"] = None
                 try:
                     result = task.result()
                     history.append({"role": "assistant", "content": result})
+                except asyncio.CancelledError:
+                    history.append({"role": "assistant", "content": "Операция отменена."})
                 except Exception as e:
                     history.append({"role": "assistant", "content": f"Ошибка: {e}"})
             else:
-                # Задача еще работает — агент снова просит подтверждения
                 history.append({"role": "assistant", "content": _format_pending(conf.pending)})
 
             return history, ""
@@ -99,11 +127,13 @@ def build_gradio_ui(agent: Agent) -> gr.Blocks:
                 "Напишите **да** или **нет**."
             )
 
-        # Привязка событий
+        def clear_chat(request: gr.Request):
+            session_id = request.session_hash if request else "default"
+            _remove_session(agent, session_id)
+            return [], ""
+
         msg.submit(respond, [msg, chatbot], [chatbot, msg])
         submit_btn.click(respond, [msg, chatbot], [chatbot, msg])
-        
-        # Очистка истории
-        clear_btn.click(lambda: ([], ""), None, [chatbot, msg])
+        clear_btn.click(clear_chat, None, [chatbot, msg])
 
     return demo

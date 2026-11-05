@@ -9,7 +9,6 @@
 """
 
 import asyncio
-import sys
 import os
 
 from contextlib import AsyncExitStack

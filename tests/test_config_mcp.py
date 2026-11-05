@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from client import config_mcp
-from scripts import conf
+from mcp_assistant.client import config_mcp
+from mcp_assistant import config as conf
 
 
 # ============================================================================
@@ -61,17 +61,16 @@ def test_defaults_are_set(tmp_path):
     config = config_mcp.load_config(path)
 
     # Глобальные дефолты
-    assert config["model"] == "GigaChat-3-Ultra"
-    assert config["api_base"] == "https://api.giga.chat/v1"
     assert config["max_steps"] == 8
+    assert config["max_history_messages"] == 40
     assert config["session_timeout"] == 300.0
     assert config["llm_timeout"] == 60.0
-    assert config["max_retries"] == 3
+    assert "max_retries" not in config
 
     # Дефолты сервера
     server = config["servers"][0]
     assert server["tool_timeout"] == 30.0
-    assert server["write_tools"] == []
+    assert server["always_confirm_by_server"] == []
 
 
 def test_existing_values_not_overwritten(tmp_path):
@@ -79,20 +78,21 @@ def test_existing_values_not_overwritten(tmp_path):
     path = write_config(tmp_path, {
         "model": "GigaChat-2-Max",
         "max_steps": 20,
+        "max_history_messages": 15,
         "servers": [{
             "name": "tickets",
             "transport": {"type": "stdio", "command": "python"},
             "tool_timeout": 5.0,
-            "write_tools": ["update_status"],
+            "always_confirm_by_server": ["update_status"],
         }],
     })
 
     config = config_mcp.load_config(path)
 
-    assert config["model"] == "GigaChat-2-Max"
     assert config["max_steps"] == 20
+    assert config["max_history_messages"] == 15
     assert config["servers"][0]["tool_timeout"] == 5.0
-    assert config["servers"][0]["write_tools"] == ["update_status"]
+    assert config["servers"][0]["always_confirm_by_server"] == ["update_status"]
 
 
 # ============================================================================
@@ -107,7 +107,7 @@ def test_m_mode_adds_pythonpath(tmp_path, patch_project_dir):
             "transport": {
                 "type": "stdio",
                 "command": "python",
-                "args": ["-m", "servers.tickets"],
+                "args": ["-m", "mcp_assistant.servers.tickets"],
             },
         }],
     })
@@ -127,7 +127,7 @@ def test_m_mode_preserves_existing_pythonpath(tmp_path, patch_project_dir):
             "transport": {
                 "type": "stdio",
                 "command": "python",
-                "args": ["-m", "servers.tickets"],
+                "args": ["-m", "mcp_assistant.servers.tickets"],
                 "env": {"PYTHONPATH": "/existing/path"},
             },
         }],
@@ -149,7 +149,7 @@ def test_m_mode_does_not_modify_args(tmp_path):
             "transport": {
                 "type": "stdio",
                 "command": "python",
-                "args": ["-m", "servers.tickets"],
+                "args": ["-m", "mcp_assistant.servers.tickets"],
             },
         }],
     })
@@ -157,7 +157,7 @@ def test_m_mode_does_not_modify_args(tmp_path):
     config = config_mcp.load_config(path)
     args = config["servers"][0]["transport"]["args"]
 
-    assert args == ["-m", "servers.tickets"]
+    assert args == ["-m", "mcp_assistant.servers.tickets"]
 
 
 # ============================================================================

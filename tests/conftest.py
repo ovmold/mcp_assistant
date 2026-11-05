@@ -6,7 +6,8 @@ from contextlib import asynccontextmanager
 import pytest
 from mcp import Client
 
-from scripts import conf
+from mcp_assistant import config as conf
+from mcp_assistant.storage import schema as db
 
 SEED_TICKETS = [
     (1, "Ошибка 502 при оплате", "При попытке оплаты возникает 502 Bad Gateway",
@@ -27,7 +28,7 @@ def temp_db(tmp_path, monkeypatch):
     """Создает временную SQLite-базу с полной схемой и тестовыми данными."""
     db_path = tmp_path / "test_tickets.db"
     conn = sqlite3.connect(db_path)
-    conn.executescript(conf.SCHEMA)
+    conn.executescript(db.SCHEMA)
     conn.executemany(
         "INSERT INTO tickets (id, subject, body, status, priority, client, "
         "created_at, updated_at, tags, issue_type) "
@@ -66,7 +67,7 @@ def temp_kb(tmp_path, monkeypatch):
     monkeypatch.setattr(conf, "KB_DIR", kb_dir)
 
     # Сбрасывает кэш перед каждым тестом
-    import servers.knowledge as knowledge_mod
+    import mcp_assistant.servers.knowledge as knowledge_mod
     knowledge_mod._EMBEDDER = None
     knowledge_mod._KB_EMBEDDINGS = None
     knowledge_mod._KB_FILENAMES = []
@@ -89,7 +90,7 @@ async def _mcp_in_memory_session(mcp_server):
 @pytest.fixture
 async def tickets_client(temp_db):
     """MCP-клиент, подключённый к серверу tickets в памяти."""
-    from servers import tickets as tickets_mod
+    from mcp_assistant.servers import tickets as tickets_mod
     async with Client(tickets_mod.mcp) as client:
         yield client
 
@@ -97,7 +98,7 @@ async def tickets_client(temp_db):
 @pytest.fixture
 async def knowledge_client(temp_kb):
     """MCP-клиент, подключённый к серверу knowledge в памяти."""
-    from servers import knowledge as knowledge_mod
+    from mcp_assistant.servers import knowledge as knowledge_mod
     async with Client(knowledge_mod.mcp) as client:
         yield client
 

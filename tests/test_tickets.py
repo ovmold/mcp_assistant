@@ -6,11 +6,30 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.mcpserver.prompts.base import UserMessage, AssistantMessage
 
-from servers.tickets import (
+from mcp_assistant.servers.tickets import (
     search_tickets, get_ticket, add_comment, update_status,
     get_ticket_resource, get_ticket_stats_resource,
     analyze_ticket
 )
+
+
+def test_ticket_default_lists_are_independent():
+    """
+    Регресс: два Ticket, созданных без явных messages/logs,
+    не должны делить один и тот же список.
+    """
+    from mcp_assistant.storage.models import Ticket, Message
+
+    t1 = Ticket(id=1, subject="a", body="", status="open",
+                priority="low", client="c", created_at="",
+                updated_at="", tags="", issue_type="bug")
+    t2 = Ticket(id=2, subject="b", body="", status="open",
+                priority="low", client="c", created_at="",
+                updated_at="", tags="", issue_type="bug")
+
+    t1.messages.append(Message(id=1, author="x", text="y", created_at=""))
+    assert t2.messages == [], "Ticket делит общий список messages между экземплярами"
+    assert t1.logs is not t2.logs
 
 
 # ============================================================================
@@ -137,17 +156,89 @@ def test_get_ticket_not_found(temp_db):
         get_ticket(9999)
 
 
+def test_get_ticket_includes_messages(temp_db):
+    """get_ticket возвращает сообщения вместе с тикетом."""
+    add_comment(1, "Комментарий 1", author="support")
+    add_comment(1, "Комментарий 2", author="client")
+
+    t = get_ticket(1)
+    assert len(t.messages) >= 2
+    texts = [m.text for m in t.messages]
+    assert "Комментарий 1" in texts
+    assert "Комментарий 2" in texts
+    assert all(m.author in ("support", "client") for m in t.messages)
+
+
+def test_get_ticket_includes_logs(temp_db):
+    """get_ticket возвращает записи лога вместе с тикетом."""
+    conn = sqlite3.connect(temp_db)
+    conn.execute(
+        "INSERT INTO logs (ticket_id, level, message, created_at) "
+        "VALUES (?, ?, ?, ?)",
+        (1, "ERROR", "502 Bad Gateway", "2024-01-01T10:00:00Z"),
+    )
+    conn.commit()
+    conn.close()
+
+    t = get_ticket(1)
+    assert len(t.logs) >= 1
+    assert any("502" in l.message for l in t.logs)
+    assert any(l.level == "ERROR" for l in t.logs)
+
+
+def test_get_ticket_empty_messages_and_logs(temp_db):
+    """Тикет без сообщений и логов возвращает пустые списки, а не None."""
+    t = get_ticket(5)   # у тикета 5 нет активности
+    assert t.messages == []
+    assert t.logs == []
+
+
+def test_get_ticket_messages_ordered_by_created_at(temp_db):
+    """Сообщения отсортированы по created_at ASC, id ASC."""
+    conn = sqlite3.connect(temp_db)
+    conn.execute("DELETE FROM messages WHERE ticket_id = 1")
+    conn.executemany(
+        "INSERT INTO messages (ticket_id, author, text, created_at) "
+        "VALUES (?, ?, ?, ?)",
+        [
+            (1, "a", "третье",  "2024-01-03T00:00:00Z"),
+            (1, "a", "первое",  "2024-01-01T00:00:00Z"),
+            (1, "a", "второе",  "2024-01-02T00:00:00Z"),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    t = get_ticket(1)
+    texts = [m.text for m in t.messages]
+    assert texts == ["первое", "второе", "третье"]
+
+
+def test_search_tickets_returns_empty_messages_and_logs(temp_db):
+    """
+    Контракт: search_tickets НЕ грузит messages/logs.
+    Полную карточку дает get_ticket(id).
+    """
+    result = search_tickets("502")
+    assert result
+    for t in result:
+        assert t.messages == []
+        assert t.logs == []
+
+
 # ============================================================================
 # add_comment
 # ============================================================================
 
 def test_add_comment(temp_db):
     """Комментарий сохраняется в таблицу messages."""
-    add_comment(1, "Клиент подтвердил проблему", author="support")
+    id = 2
+    add_comment(id, "Клиент подтвердил проблему", author="support")
 
     conn = sqlite3.connect(temp_db)
     rows = conn.execute(
-        "SELECT author, text FROM messages WHERE ticket_id = 1"
+        "SELECT author, text FROM messages WHERE ticket_id = ?", 
+        (id,)
     ).fetchall()
     conn.close()
 
@@ -159,7 +250,6 @@ def test_add_comment_to_missing_ticket(temp_db):
     """Комментарий к несуществующему тикету вызывает ToolError."""
     with pytest.raises(ToolError, match=r"(?i)не найден"):
         add_comment(9999, "текст")
-
 
 # ============================================================================
 # update_status
@@ -196,7 +286,7 @@ def test_update_status_fts_sync(temp_db):
     """
     Проверяет, что триггер FTS обновил индекс после смены subject.
     
-    Если триггер не работает, поиск по новой теме не найдёт тикет.
+    Если триггер не работает, поиск по новой теме не найдет тикет.
     """
     conn = sqlite3.connect(temp_db)
     conn.execute("UPDATE tickets SET subject = 'Новая тема про 502' WHERE id = 1")
@@ -224,6 +314,8 @@ def test_get_ticket_resource_found(temp_db):
     assert "**Тэги:** payment,502" in result
     assert "## Описание" in result
     assert "При попытке оплаты возникает 502 Bad Gateway" in result
+    assert "## Переписка" in result
+    assert "## Лог" in result
 
 
 def test_get_ticket_resource_invalid_id_format(temp_db):
@@ -236,6 +328,22 @@ def test_get_ticket_resource_not_found(temp_db):
     """Несуществующий ID вызывает ValueError."""
     with pytest.raises(ValueError, match=r"(?i)не найден"):
         get_ticket_resource("9999")
+
+
+def test_get_ticket_resource_shows_messages(temp_db):
+    """Сообщения попадают в карточку ресурса."""
+    add_comment(1, "Уникальный текст сообщения", author="support")
+    result = get_ticket_resource("1")
+
+    assert "Уникальный текст сообщения" in result
+    assert "support" in result
+
+
+def test_get_ticket_resource_empty_sections(temp_db):
+    """Для тикета без активности отображаются заглушки."""
+    t = get_ticket_resource("5")   # тикет без messages/logs
+    assert "_Сообщений нет._" in t
+    assert "_Записей лога нет._" in t
 
 
 # ============================================================================

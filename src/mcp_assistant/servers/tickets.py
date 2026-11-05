@@ -1,7 +1,7 @@
 """
 MCP-сервер `tickets` (транспорт stdio)
 
-Сервер работает поверх SQLite с тикетами. В таблице хранятся id, клиент, тема, текст, приоритет, статус, даты создания и обновления, а также комментарии.
+Сервер работает поверх SQLite с тикетами. В таблице хранятся id, клиент, тема, текст, приоритет, статус, даты создания и обновления.
 
 - **Tools:** `search_tickets(query, status?, priority?, customer?, limit)`, `get_ticket(id)`, `add_comment(id, text)`, `update_status(id, status, comment)`.
 - **Resources:** `ticket://{id}` — полная карточка тикета; `tickets://stats` — сводка по статусам и приоритетам.
@@ -12,24 +12,45 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.mcpserver.prompts.base import UserMessage, AssistantMessage
 from mcp.types import ToolAnnotations
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import sqlite3
 import re
-from scripts import conf
 
-# Создает MCP сервер
+from mcp_assistant import config as conf
+from mcp_assistant import seed_data
+from mcp_assistant.storage.models import Ticket, Message, LogEntry
+
 mcp = MCPServer("tickets")
+
+
+@contextmanager
+def _db_cursor() -> Iterator[sqlite3.Cursor]:
+    """Гарантирует закрытие соединения и курсора при любом исходе."""
+    conn = sqlite3.connect(conf.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        yield cursor
+    finally:
+        cursor.close()
+        conn.close()
 
 # ----------------------------- Tools ------------------------
 
-@mcp.tool()
+@mcp.tool(
+    annotations = ToolAnnotations(
+        readOnlyHint=True
+    )
+)
 def search_tickets(
     query: str,
     limit: int = 10,
     status: str = None,
     priority: str = None,
     customer: str = None,
-) -> list[conf.Ticket]:
+) -> list[Ticket]:
     """
     Ищет тикеты по ключевому слову в теме или описании (полнотекстовый поиск FTS5).
     Дополнительно может фильтровать по статусу, приоритету или заказчику.
@@ -43,7 +64,8 @@ def search_tickets(
 
     Returns:
         Список найденных тикетов, отсортированных по релевантности (bm25),
-        затем по дате создания (сначала новые).
+        затем по дате создания (сначала новые). Поля messages и logs в результатах поиска
+        всегда пустые — для получения переписки и лога вызовите get_ticket(id).
     Raises:
         ToolError: Если ключевое слово или фраза для поиска (query) пустое.
     """
@@ -96,66 +118,44 @@ def search_tickets(
         LIMIT ?
     """
 
-    conn = sqlite3.connect(conf.DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
     try:
-        cursor.execute(sql, params)
-        rows = cursor.fetchall()
-        return [conf.Ticket(**dict(row)) for row in rows]
+        with _db_cursor() as cursor:
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+        return [Ticket(**dict(row)) for row in rows]
     except Exception as e:
         raise ToolError(f"Ошибка поиска тикетов: {e}") from e
-    finally:
-        cursor.close()
-        conn.close()
 
-@mcp.tool()
-def get_ticket(ticket_id: int) -> conf.Ticket:
-    """
-    Возвращает тикет по его уникальному идентификатору.
-    
-    Используйте этот инструмент, когда нужно получить полную информацию о тикете:
-    тему, описание, статус, приоритет, клиента и другие поля.
-    
-    Args:
-        ticket_id: Уникальный идентификатор тикета (целое число).
-            Пример: 1042.
-    
-    Returns:
-        conf.Ticket: Объект тикета со следующими полями:
-            - id (int): идентификатор
-            - subject (str): тема тикета
-            - body (str): описание проблемы
-            - status (str): текущий статус (open, pending, resolved, closed)
-            - priority (str): приоритет (low, medium, high, critical)
-            - client (str): имя клиента
-            - created_at (str): дата создания в ISO 8601
-            - updated_at (str): дата последнего обновления в ISO 8601
-            - tags (str): теги через запятую, например: payment, 502, gateway
-            - issue_type (str): тип проблемы 
-    
-    Raises:
-        ToolError: Если тикет с указанным ID не найден в базе данных.
-    """  
-    conn = sqlite3.connect(conf.DB_PATH)
-    conn.row_factory = sqlite3.Row  # включает доступ к столбцам по имени
-    cursor = conn.cursor()
-    try:
-        cursor.execute(
-            "SELECT * FROM tickets "
-            "WHERE id = ?",
-            (ticket_id,)
-        )
+def _load_ticket(ticket_id: int) -> Ticket | None:
+    with _db_cursor() as cursor:
+        cursor.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,))
         row = cursor.fetchone()
         if row is None:
-            raise ToolError(
-                f"Тикет {ticket_id} не найден.")
-        
-        ticket = conf.Ticket(**dict(row))
+            return None
 
-    finally:
-        cursor.close()
-        conn.close()
+        cursor.execute(
+            "SELECT id, author, text, created_at FROM messages "
+            "WHERE ticket_id = ? ORDER BY created_at ASC, id ASC",
+            (ticket_id,),
+        )
+        messages = [Message(**dict(message)) for message in cursor.fetchall()]
+
+        cursor.execute(
+            "SELECT id, level, message, created_at FROM logs "
+            "WHERE ticket_id = ? ORDER BY created_at ASC, id ASC",
+            (ticket_id,),
+        )
+        logs = [LogEntry(**dict(log)) for log in cursor.fetchall()]
+
+    return Ticket(**dict(row), messages=messages, logs=logs)
+
+
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+def get_ticket(ticket_id: int) -> Ticket:
+    """Возвращает полный тикет по ID, включая переписку и логи."""
+    ticket = _load_ticket(ticket_id)
+    if ticket is None:
+        raise ToolError(f"Тикет {ticket_id} не найден.")
     return ticket
     
 
@@ -205,24 +205,17 @@ def add_comment(
             "(например: 'Клиент подтвердил проблему')."
         )
     
-    conn = sqlite3.connect(conf.DB_PATH)
-    cursor = conn.cursor()
-    try:
-        # Проверяет, что тикет существует
+    with _db_cursor() as cursor:
         cursor.execute("SELECT 1 FROM tickets WHERE id = ?", (ticket_id,))
         if cursor.fetchone() is None:
             raise ToolError(f"Тикет {ticket_id} не найден.")
-        
-        # Вставляет комментарий
+
         cursor.execute(
             "INSERT INTO messages (ticket_id, author, text, created_at) "
             "VALUES (?, ?, ?, ?)",
-            (ticket_id, author, text, conf._iso(datetime.now(tz=timezone.utc)))
+            (ticket_id, author, text, seed_data._iso(datetime.now(tz=timezone.utc)))
         )
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
+        cursor.connection.commit()
 
 
 @mcp.tool(
@@ -284,97 +277,99 @@ def update_status(
             "(например: 'Проблема решена, клиент подтвердил.')."
         )
     
-    conn = sqlite3.connect(conf.DB_PATH)
-    cursor = conn.cursor()
-    try:
-        # Проверяет, что тикет существует
+    with _db_cursor() as cursor:
         cursor.execute("SELECT 1 FROM tickets WHERE id = ?", (ticket_id,))
         if cursor.fetchone() is None:
             raise ToolError(f"Тикет {ticket_id} не найден.")
 
-        if status not in conf.STATUSES:
+        if status not in seed_data.STATUSES:
             raise ToolError(f"Неправильный статус: {status}.")
 
-        # timestamp для обеих записей
-        changed_at = conf._iso(datetime.now(tz=timezone.utc))
-
-        # Обновляет статус
+        changed_at = seed_data._iso(datetime.now(tz=timezone.utc))
         cursor.execute(
-            "UPDATE tickets SET status = ?, updated_at = ? "
-            "WHERE id = ?",
-            (status, changed_at, ticket_id)
+            "UPDATE tickets SET status = ?, updated_at = ? WHERE id = ?",
+            (status, changed_at, ticket_id),
         )
-        
-        # Вставляет комментарий
         cursor.execute(
             "INSERT INTO messages (ticket_id, author, text, created_at) "
             "VALUES (?, ?, ?, ?)",
-            (ticket_id, author, comment, changed_at)
+            (ticket_id, author, comment, changed_at),
         )
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
+        cursor.connection.commit()
 
 # ----------------------------- Resources ------------------------
 @mcp.resource("ticket://{ticket_id}")
 def get_ticket_resource(ticket_id: str) -> str:
     """
     Возвращает полную карточку тикета по его ID.
-    
+
     Ресурс доступен по адресу: ticket://{ticket_id}
     Пример: ticket://1042
-    
+
     Args:
         ticket_id: ID тикета (в URI передается как строка).
-    
+
     Returns:
-        str: Текстовая карточка тикета со всеми полями в формате Markdown.
-    
+        str: Текстовая карточка тикета со всеми полями, перепиской
+        и записями лога в формате Markdown.
+
     Raises:
-        ValueError: 
+        ValueError:
             - Если тикет с таким ID не найден
             - Если ID тикета не может быть преобразован в int
     """
 
-    # Преобразует строку в int
     try:
         tid = int(ticket_id)
-    except ValueError:
-        raise ValueError(f"Неправильный ID тикета: {ticket_id}.")
+    except ValueError as e:
+        raise ValueError(f"Неправильный ID тикета: {ticket_id}.") from e
 
-    conn = sqlite3.connect(conf.DB_PATH)
-    conn.row_factory = sqlite3.Row  # включает доступ к столбцам по имени
-    cursor = conn.cursor()
-    try:
-        cursor.execute(
-            "SELECT * FROM tickets "
-            "WHERE id = ?",
-            (tid,)
-        )
-        row = cursor.fetchone()
-        if row is None:
-            raise ValueError(f"Тикет {ticket_id} не найден.")
-        ticket_card = [
-            f"# Тикет #{row['id']}",
-            f"",
-            f"**Тема:** {row['subject']}",
-            f"**Статус:** {row['status']}",
-            f"**Приоритет:** {row['priority']}",
-            f"**Клиент:** {row['client']}",
-            f"**Тип:** {row['issue_type']}",
-            f"**Тэги:** {row['tags']}",
-            f"",
-            f"**Создан:** {row['created_at']}",
-            f"**Изменен:** {row['updated_at']}",
-            f"",
-            f"## Описание",
-            f"",
-            f"{row['body']}",
-        ]
-    finally:
-        cursor.close()
-        conn.close()
+    ticket = _load_ticket(tid)
+    if ticket is None:
+        raise ValueError(f"Тикет {ticket_id} не найден.")
+
+    ticket_card = [
+        f"# Тикет #{ticket.id}",
+        "",
+        f"**Тема:** {ticket.subject}",
+        f"**Статус:** {ticket.status}",
+        f"**Приоритет:** {ticket.priority}",
+        f"**Клиент:** {ticket.client}",
+        f"**Тип:** {ticket.issue_type}",
+        f"**Тэги:** {ticket.tags}",
+        "",
+        f"**Создан:** {ticket.created_at}",
+        f"**Изменен:** {ticket.updated_at}",
+        "",
+        "## Описание",
+        "",
+        ticket.body,
+        "",
+        f"## Переписка ({len(ticket.messages)})",
+        "",
+    ]
+
+    if not ticket.messages:
+        ticket_card.extend(["_Сообщений нет._", ""])
+    else:
+        for message in ticket.messages:
+            ticket_card.extend([
+                f"### {message.author} — {message.created_at} (сообщение #{message.id})",
+                "",
+                message.text,
+                "",
+            ])
+
+    ticket_card.extend([f"## Лог ({len(ticket.logs)})", ""])
+    if not ticket.logs:
+        ticket_card.append("_Записей лога нет._")
+    else:
+        for log in ticket.logs:
+            ticket_card.append(
+                f"- **[{log.level}]** `{log.created_at}` "
+                f"(запись #{log.id}): {log.message}"
+            )
+
     return "\n".join(ticket_card)
 
 @mcp.resource("tickets://stats")
@@ -387,56 +382,34 @@ def get_ticket_stats_resource() -> str:
     Returns:
         str: Текстовая сводка в формате Markdown.
     """
-    conn = sqlite3.connect(conf.DB_PATH)
-    cursor = conn.cursor()
-    try:
-        # Статистика по статусам
+    with _db_cursor() as cursor:
         cursor.execute(
-            "SELECT status, COUNT(*) "
-            "FROM tickets "
-            "GROUP BY status "
-            "ORDER BY COUNT(*) DESC "
+            "SELECT status, COUNT(*) FROM tickets "
+            "GROUP BY status ORDER BY COUNT(*) DESC"
         )
         by_status = cursor.fetchall()
-        
-        # Статистика по приоритетам
+
         cursor.execute(
-            "SELECT priority, COUNT(*) "
-            "FROM tickets "
-            "GROUP BY priority "
-            "ORDER BY COUNT(*) DESC"
+            "SELECT priority, COUNT(*) FROM tickets "
+            "GROUP BY priority ORDER BY COUNT(*) DESC"
         )
         by_priority = cursor.fetchall()
-        
-        # Общее количество
+
         cursor.execute("SELECT COUNT(*) FROM tickets")
         total = cursor.fetchone()[0]
 
-        stats = [
-            "# Статистика по тикетам",
-            "",
-            f"**Всего тикетов:** {total}",
-            "",
-            "## По статусам",
-            "",
-        ]
-
-        for status, count in by_status:
-            stats.append(f"- **{status}:** {count}")
-        
-        stats.extend([
-            "",
-            "## По приоритетам",
-            "",
-        ])
-        
-        for priority, count in by_priority:
-            stats.append(f"- **{priority}:** {count}")
-        
-        return "\n".join(stats)
-    finally:
-        cursor.close()
-        conn.close()
+    stats = [
+        "# Статистика по тикетам",
+        "",
+        f"**Всего тикетов:** {total}",
+        "",
+        "## По статусам",
+        "",
+    ]
+    stats.extend(f"- **{status}:** {count}" for status, count in by_status)
+    stats.extend(["", "## По приоритетам", ""])
+    stats.extend(f"- **{priority}:** {count}" for priority, count in by_priority)
+    return "\n".join(stats)
 
 # ----------------------------- Prompts ------------------------
 @mcp.prompt()
@@ -492,4 +465,5 @@ def analyze_ticket(ticket_id: str) -> list:
     ]
 
 if __name__ == "__main__":
+    conf.load_env(conf.PROJECT_DIR / ".env")
     mcp.run()

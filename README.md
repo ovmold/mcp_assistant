@@ -13,7 +13,7 @@
 ### 2. Установка
 Склонируйте репозиторий и установите зависимости:
 ```bash
-git clone <url_вашего_репозитория>
+git clone https://github.com/ovmold/mcp_assistant.git
 cd mcp_assistant
 uv sync     # Первый запуск может занять 5-10 минут (скачивается PyTorch)
 ```
@@ -27,7 +27,7 @@ uv sync     # Первый запуск может занять 5-10 минут 
 `messages(id, ticket_id, author, text, created_at)`\
 `logs(id, ticket_id, level, message, created_at)`\
 Для заполнения БД тестовыми тикетами выполните в каталоге `mcp_assistant` команду:\
-`uv run python -m src.scripts.seed`\
+`uv run python -m mcp_assistant.seed`\
 После выполнения этой команды в каталоге `mcp_assistant` будут созданы:
 * каталог `data`, содержащий
   * `tickets.db` - файл SQLite БД
@@ -35,23 +35,23 @@ uv sync     # Первый запуск может занять 5-10 минут 
 * каталог `traces` - каталог для хранения JSONL-файла трассировки сессии (пример записи сессии в файле `example_session.jsonl`)
 
 Для удаления старых данных и пересоздания БД и базы знаний выполните:\
-`uv run python -m src.scripts.seed --reset`
+`uv run python -m mcp_assistant.seed --reset`
 
 ### 5. Запуск
 1. Запуск Streamable HTTP сервера:
 ```bash 
-uv run python -m src.servers.knowledge
+uv run python -m mcp_assistant.servers.knowledge
 ```
 2. Запуск агента в одном из двух интерфейсов:
   * веб-интерфейс (Gradio)
     ```bash
-    uv run python -m src.client.main --ui gradio [--host HOST] [--port PORT]
+    uv run python -m mcp_assistant.client.main --ui gradio [--host HOST] [--port PORT]
     ```
     По умолчанию HOST = 127.0.0.1, PORT = 7860\
     Откройте в браузере: http://127.0.0.1:7860
   * консольный интерфейс (CLI)
     ```bash
-    uv run python -m src.client.main --ui cli
+    uv run python -m mcp_assistant.client.main --ui cli
     ```
 
 **Пример использования консольного интерфейса:**
@@ -125,6 +125,7 @@ graph TD
 ```
 
 ## Запуск unit-тестов
+Все команды запускаются из каталога `mcp_assistant`.
 ### Все тесты
 ```bash
 uv run pytest -vv
@@ -153,12 +154,13 @@ uv run pytest tests/test_agent.py -vv
 ## Запуск evals
 
 Проект содержит фреймворк для автоматической оценки качества агента.\
-Запуск сценариев:
+Запуск сценариев из каталога `mcp_assistant`:
 ```bash
 uv run python evals/run_evals.py [--scenario SCENARIO] [--file SCENARIO_FILE] [--runs RUNS]
 ```
 При запуске можно указать ID конкретного сценария (`--scenario SCENARIO`), имя YAML-файла со сценариями (`--file SCENARIO_FILE`, по умолчанию - `evals/scenarios.yaml`) и/или количество прогонов на сценарий (`--runs RUNS`, по умолчанию - 3)
 По итогам тестов выводится информация о стабильности (Success Rate), точности выбора инструментов и среднем количестве шагов. Пример вывода результатов приведен в файле `EVALS.md`.
+До запуска сценариев необходимо запустить сервер `knowledge` (см. [5. Запуск](#5-Запуск) в разделе "Быстрый старт")
 
 ## Технологический стек
 

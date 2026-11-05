@@ -1,9 +1,11 @@
 import sqlite3
 import os
+from pathlib import Path
 
-from scripts import conf
+from mcp_assistant import config as conf
+from mcp_assistant.storage import schema as db
 
-SCENARIOS_FILE = "evals/scenarios.yaml"
+SCENARIOS_FILE = Path(__file__).parent / "scenarios.yaml"
 EVALS_DB = "evals_tickets.db"
 
 SEED_TICKETS = [
@@ -39,7 +41,7 @@ def init_eval_db():
             
     # Создаем заново и наполняем данными
     conn = sqlite3.connect(conf.DB_PATH)
-    conn.executescript(conf.SCHEMA)
+    conn.executescript(db.SCHEMA)
     conn.executemany(
         "INSERT INTO tickets (id, subject, body, status, priority, client, "
         "created_at, updated_at, tags, issue_type) "

@@ -26,12 +26,12 @@ if project_root not in sys.path:
 
 # --- ИМПОРТ МОДУЛЕЙ ПРОЕКТА ---
 from gigachat import GigaChat
-from scripts import conf
-from client.agent import Agent, LLMClient
-from client.config_mcp import load_config
-from client.mcp_client import MCPClient
-from client.confirmation import ConfirmationProvider
-from conf_evals import init_eval_db, SCENARIOS_FILE
+from mcp_assistant import config as conf
+from mcp_assistant.client.agent import Agent, LLMClient
+from mcp_assistant.client.config_mcp import load_config
+from mcp_assistant.client.mcp_client import MCPClient
+from mcp_assistant.client.confirmation import ConfirmationProvider
+from evals.conf_evals import init_eval_db, SCENARIOS_FILE
 
 
 # --- ВСПОМОГАТЕЛЬНЫЕ КЛАССЫ ---
@@ -116,7 +116,7 @@ async def run_scenario(agent: Agent, scenario: dict) -> dict:
 
 
 # --- MAIN ---
-async def main():
+async def main() -> None:
     parser = argparse.ArgumentParser(description="Запуск Evals для MCP Agent")
     parser.add_argument("--scenario", "-s", type=str, help="ID конкретного сценария для запуска")
     parser.add_argument("--file", "-f", type=str, default=SCENARIOS_FILE, help="Путь к YAML файлу")
@@ -125,7 +125,15 @@ async def main():
 
     auth_key = os.environ.get("GIGACHAT_AUTH_KEY")
     if not auth_key:
-        print("Ошибка: GIGACHAT_AUTH_KEY не задан")
+        print("Переменная окружения GIGACHAT_AUTH_KEY не задана")
+        return
+    api_base = os.environ.get("GIGACHAT_BASE_URL")
+    if not api_base:
+        print("Переменная окружения GIGACHAT_BASE_URL не задана")
+        return
+    model = os.environ.get("MODEL")
+    if not model:
+        print("Переменная окружения MODEL не задана")
         return
 
     # Загрузка конфигурации
@@ -133,14 +141,14 @@ async def main():
     
     # Инициализация LLM
     giga = GigaChat(
-        base_url=config["api_base"],
-        model=config["model"],
+        base_url=api_base,
+        model=model,
         credentials=auth_key,
         scope="GIGACHAT_API_PERS",
         verify_ssl_certs=False,
         timeout=config.get("llm_timeout", 60.0),
     )
-    llm = LLMClient(giga_instance=giga, model=config["model"])
+    llm = LLMClient(giga_instance=giga, model=model)
 
     write_tools_by_server = {
         server["name"]: set(server.get("write_tools", []))

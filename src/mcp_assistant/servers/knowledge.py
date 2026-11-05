@@ -9,11 +9,12 @@ MCP-сервер `knowledge` (транспорт Streamable HTTP)
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ToolAnnotations
 from sentence_transformers import SentenceTransformer
 import numpy as np
 import re
 
-from scripts import conf
+from mcp_assistant import config as conf
 
 # Создает MCP сервер
 mcp = MCPServer("knowledge base")
@@ -139,7 +140,11 @@ def _init_kb():
         show_progress_bar=False
     )
 
-@mcp.tool()
+@mcp.tool(
+    annotations = ToolAnnotations(
+        readOnlyHint=True
+    )    
+)
 def search_kb(query: str, top_k: int = 3) -> list[str]: 
     """
     Ищет статьи в базе знаний по поисковому запросу.
@@ -192,8 +197,19 @@ def search_kb(query: str, top_k: int = 3) -> list[str]:
     return result
 
 
-@mcp.tool()
-def get_article(article_type: str) -> str: 
+def _read_article(article_type: str) -> str:
+    """Возвращает статью; единая валидация имени предотвращает выход за KB_DIR."""
+    if not re.fullmatch(r"[a-zA-Z0-9_\-]+", article_type):
+        raise ValueError(f"Недопустимое имя статьи '{article_type}'.")
+    return (conf.KB_DIR / f"{article_type}.md").read_text(encoding="utf-8")
+
+
+@mcp.tool(
+    annotations = ToolAnnotations(
+        readOnlyHint=True
+    )
+)
+def get_article(article_type: str) -> str:
     """
     Возвращает содержимое статьи из базы знаний по ее типу.
 
@@ -209,71 +225,33 @@ def get_article(article_type: str) -> str:
         Текст статьи в формате Markdown.
 
     Raises:
-        ToolError: 
-            - Если имя статьи недопустимо (содержит запрещенные символы).
-            - Если статья с указанным типом не найдена.
-            - Если нет прав на чтение файла статьи.
-            - Если файл статьи имеет некорректную кодировку.
-            - При любых других ошибках чтения файла.
+        ToolError: Если имя недопустимо или статью не удалось прочитать.
     """
-    # Валидация: только буквы, цифры, дефисы, подчеркивания
-    if not re.fullmatch(r"[a-zA-Z0-9_\-]+", article_type):
-        raise ToolError(f"Недопустимое имя статьи '{article_type}'.")
-    path = conf.KB_DIR / f"{article_type}.md"
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read()
-        return content
-    except FileNotFoundError:
-            raise ToolError(f"Статья '{article_type}' не найдена.")
-    except PermissionError:
-        raise ToolError("Ошибка: нет прав на чтение файла статьи.")
+        return _read_article(article_type)
+    except ValueError as e:
+        raise ToolError(str(e)) from e
+    except FileNotFoundError as e:
+        raise ToolError(f"Статья '{article_type}' не найдена.") from e
+    except PermissionError as e:
+        raise ToolError("Ошибка: нет прав на чтение файла статьи.") from e
     except UnicodeDecodeError as e:
-        raise ToolError(
-            f"Файл статьи имеет некорректную кодировку: {e}"
-        ) from e
+        raise ToolError(f"Файл статьи имеет некорректную кодировку: {e}") from e
     except Exception as e:
-        raise ToolError(f"Ошибка чтения файла статьи: {e}") 
+        raise ToolError(f"Ошибка чтения файла статьи: {e}") from e
+
 
 # ----------------------------- Resources ------------------------
 @mcp.resource("kb://{article_type}")
 def get_article_resource(article_type: str) -> str:
-    """
-    Возвращает текст статьи из базы знаний как MCP-ресурс.
-
-    URI: kb://{article_type}
-    Например: kb://payment-502, kb://password-reset-email.
-
-    Args:
-        article_type: Тип статьи (имя файла без расширения .md).
-            Допускаются только буквы, цифры, дефисы и подчеркивания.
-
-    Returns:
-        Текст статьи в формате Markdown.
-
-    Raises:
-        ValueError: Если имя статьи недопустимо.
-        FileNotFoundError: Если статья с указанным типом не найдена.
-        PermissionError: Если нет прав на чтение файла статьи.
-        UnicodeDecodeError: Если файл статьи имеет некорректную кодировку.
-        Exception: При любых других ошибках чтения файла.
-    """
-    # Валидация: только буквы, цифры, дефисы, подчеркивания
-    if not re.fullmatch(r"[a-zA-Z0-9_\-]+", article_type):
-        raise ValueError(f"Недопустимое имя статьи '{article_type}'")
-    path = conf.KB_DIR / f"{article_type}.md"
+    """Возвращает статью как MCP-ресурс `kb://{article_type}`."""
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read()
-        return content
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Статья '{article_type}' не найдена.")
-    except PermissionError:
-        raise PermissionError("Ошибка: нет прав на чтение статьи.")
-    except UnicodeDecodeError:
-        raise UnicodeDecodeError("Ошибка: файл статьи имеет некорректную кодировку.")
-    except Exception as e:
-        raise Exception(f"Ошибка чтения статьи: {e}")
+        return _read_article(article_type)
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f"Статья '{article_type}' не найдена.") from e
+    except PermissionError as e:
+        raise PermissionError("Ошибка: нет прав на чтение статьи.") from e
 
 if __name__ == "__main__":
+    conf.load_env(conf.PROJECT_DIR / ".env")
     mcp.run(transport="streamable-http", host=conf.HOST, port=conf.PORT)

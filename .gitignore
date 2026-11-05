@@ -14,7 +14,8 @@ wheels/
 
 # Data and Traces directories
 data
-traces
 
 # VS Code
 .vscode
+
+*.mp4
