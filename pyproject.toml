@@ -1,7 +1,7 @@
 [project]
 name = "mcp_assistant"
 version = "0.1.0"
-description = "Интеллектуальный ассистент на базе GigaChat и протокола Model Context Protocol (MCP). Умеет искать тикеты в базе данных (БД), работать с базой знаний (md-файлы), изменять статусы и добавлять комментарии, запрашивая подтверждение на выполнение этих действий"
+description = "Интеллектуальный ассистент на базе GigaChat или OpenAI и протокола Model Context Protocol (MCP). Умеет искать тикеты в базе данных (БД), работать с базой знаний (md-файлы), изменять статусы и добавлять комментарии, запрашивая подтверждение на выполнение этих действий"
 readme = "README.md"
 authors = [
     { name = "Ольга Молдованова", email = "ovmold@yandex.ru" }
@@ -14,6 +14,7 @@ dependencies = [
     "gradio>=6.30.0",
     "mcp[cli]>=2.3.0",
     "numpy>=2.5.4",
+    "openai>=1.0.0",
     "python-dotenv>=1.2.4",
     "pyyaml>=6.0.3",
     "sentence-transformers>=6.1.0",

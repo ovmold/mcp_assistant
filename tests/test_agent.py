@@ -12,7 +12,8 @@ from mcp.types import Prompt, PromptArgument, ToolAnnotations
 
 import pytest
 
-from mcp_assistant.client.agent import Agent, LLMClient, wrap_tool_result
+from mcp_assistant.client.agent import Agent, wrap_tool_result
+from mcp_assistant.client.llm import GigaChatLLMClient
 from mcp_assistant.client.confirmation import CLIConfirmation
 from mcp_assistant.client import agent_prompts
 
@@ -88,7 +89,7 @@ class MockMCPClient:
         )
 
 
-class MockLLMClient(LLMClient):
+class MockLLMClient(GigaChatLLMClient):
     """Заглушка для LLM-клиента, возвращающая заранее заданные ответы."""
     def __init__(self, responses: list):
         self.responses = responses
@@ -869,7 +870,7 @@ async def test_run_appends_final_answer_to_history(mock_mcp_client, mock_tracer,
 
 @pytest.mark.anyio
 async def test_run_appends_error_to_history(mock_mcp_client, mock_tracer, mock_confirmation):
-    class FailingLLM(LLMClient):
+    class FailingLLM(GigaChatLLMClient):
         async def chat(self, messages, functions=None):
             raise RuntimeError("network down")
 
@@ -1126,7 +1127,7 @@ async def test_llm_client_enables_parallel_tool_calls():
             return ChatCompletionResponse(messages=[])
 
     chat_resource = FakeChatResource()
-    client = LLMClient(SimpleNamespace(chat=chat_resource), "GigaChat-3-Ultra")
+    client = GigaChatLLMClient(SimpleNamespace(chat=chat_resource), "GigaChat-3-Ultra")
     await client.chat(
         [{"role": "user", "content": "test"}],
         [{"name": "search", "description": "Search", "parameters": {"type": "object"}}],

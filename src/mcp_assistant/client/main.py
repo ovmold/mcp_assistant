@@ -5,7 +5,6 @@
 """
 
 import asyncio
-import os
 import sys
 import argparse
 
@@ -13,11 +12,10 @@ import uvicorn
 from fastapi import FastAPI
 import gradio as gr
 
-from gigachat import GigaChat
-
 from mcp_assistant.client.ui.gradio import build_gradio_ui
 from mcp_assistant.client.ui.cli import run_cli
-from mcp_assistant.client.agent import Agent, LLMClient
+from mcp_assistant.client.agent import Agent
+from mcp_assistant.client.llm import create_llm
 from mcp_assistant.client.config_mcp import load_config
 from mcp_assistant.client.mcp_client import MCPClient
 from mcp_assistant.client.confirmation import CLIConfirmation, GradioConfirmation
@@ -34,43 +32,19 @@ async def main() -> int:
     parser.add_argument("--port", type=int, default=7860)
     args = parser.parse_args()
 
-    # 1. Проверяет токен, api_base_url и модель
+    # 1. Загружает окружение и конфигурацию
     conf.load_env(conf.PROJECT_DIR / ".env")
-    auth_key = os.environ.get("GIGACHAT_AUTH_KEY")
-    if not auth_key:
-        print("Переменная окружения GIGACHAT_AUTH_KEY не задана")
-        return 1
-    api_base = os.environ.get("GIGACHAT_BASE_URL")
-    if not api_base:
-        print("Переменная окружения GIGACHAT_BASE_URL не задана")
-        return 1
-    model = os.environ.get("MODEL")
-    if not model:
-        print("Переменная окружения MODEL не задана")
-        return 1
-
-    # 2. Загружает конфиг
     try:
         config = load_config(conf.CLIENT_DIR / "servers.json")
     except Exception as e:
         print(f"Ошибка конфигурации: {e}")
         return 1
 
-    # 3. Создает LLM-клиент через официальный SDK
+    # 2. Создает клиент выбранного LLM-провайдера
     try:
-        giga = GigaChat(
-            base_url=api_base,
-            model=model,
-            credentials=auth_key, # Ключ авторизации из личного кабинета
-            scope="GIGACHAT_API_PERS",
-            verify_ssl_certs=False,
-            timeout=config.get("llm_timeout", 60.0),
-        )
-       
-        # Передаем готовый экземпляр GigaChat в асинхронный клиент-обертку
-        llm = LLMClient(giga_instance=giga, model=model)
+        llm = create_llm(timeout=config.get("llm_timeout", 60.0))
     except Exception as e:
-        print(f"Ошибка инициализации GigaChat: {e}")
+        print(f"Ошибка инициализации LLM: {e}")
         return 1
 
     # 4. Подключается к MCP-серверам
@@ -130,7 +104,7 @@ async def main() -> int:
             try:
                 await mcp.close_all()
             finally:
-                giga.close()
+                llm.close()
 
     return 0
 

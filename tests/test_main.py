@@ -2,6 +2,7 @@ import sys
 
 import pytest
 
+from mcp_assistant.client import llm as llm_module
 from mcp_assistant.client import main as main_module
 
 
@@ -67,9 +68,10 @@ def main_mocks(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["mcp-assistant", "--ui", "cli"])
     monkeypatch.setattr(main_module.conf, "load_env", lambda path: None)
     monkeypatch.setattr(main_module, "load_config", lambda path: {"servers": []})
-    monkeypatch.setattr(main_module, "GigaChat", FakeGigaChat)
+    monkeypatch.setattr(llm_module, "GigaChat", FakeGigaChat)
     monkeypatch.setattr(main_module, "MCPClient", FakeMCPClient)
     monkeypatch.setattr(main_module, "Tracer", FakeTracer)
+    monkeypatch.setenv("LLM_PROVIDER", "gigachat")
     monkeypatch.setenv("GIGACHAT_AUTH_KEY", "test-key")
     monkeypatch.setenv("GIGACHAT_BASE_URL", "http://localhost")
     monkeypatch.setenv("MODEL", "test-model")

@@ -20,9 +20,9 @@ project_root = str(Path(__file__).resolve().parent.parent)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from gigachat import GigaChat
 from mcp_assistant import config as conf
-from mcp_assistant.client.agent import Agent, LLMClient
+from mcp_assistant.client.agent import Agent
+from mcp_assistant.client.llm import create_llm
 from mcp_assistant.client.config_mcp import load_config
 from mcp_assistant.client.mcp_client import MCPClient
 from evals.conf_evals import init_eval_db, SCENARIOS_FILE
@@ -36,29 +36,12 @@ async def main() -> None:
     parser.add_argument("--runs", "-r", type=int, default=3, help="Количество прогонов на сценарий")
     args = parser.parse_args()
 
-    auth_key = os.environ.get("GIGACHAT_AUTH_KEY")
-    if not auth_key:
-        print("Переменная окружения GIGACHAT_AUTH_KEY не задана")
-        return
-    api_base = os.environ.get("GIGACHAT_BASE_URL")
-    if not api_base:
-        print("Переменная окружения GIGACHAT_BASE_URL не задана")
-        return
-    model = os.environ.get("MODEL")
-    if not model:
-        print("Переменная окружения MODEL не задана")
-        return
-
     config = load_config(conf.CLIENT_DIR / "servers.json")
-    giga = GigaChat(
-        base_url=api_base,
-        model=model,
-        credentials=auth_key,
-        scope="GIGACHAT_API_PERS",
-        verify_ssl_certs=False,
-        timeout=config.get("llm_timeout", 60.0),
-    )
-    llm = LLMClient(giga_instance=giga, model=model)
+    try:
+        llm = create_llm(timeout=config.get("llm_timeout", 60.0))
+    except Exception as e:
+        print(f"Ошибка инициализации LLM: {e}")
+        return
     always_confirm_tools = {
         server["name"]: set(server.get("always_confirm_by_server", []))
         for server in config["servers"]
@@ -127,7 +110,7 @@ async def main() -> None:
                 print(f"  │    Ответ агента: {answer!r}")
             print()
     finally:
-        giga.close()
+        llm.close()
 
     print_results(results_by_scenario, args.runs)
 

@@ -1,12 +1,12 @@
 # MCP-ассистент инженера поддержки
 
-Ассистент на базе GigaChat и Model Context Protocol (MCP). Он ищет тикеты в SQLite, работает с Markdown-базой знаний, добавляет комментарии и изменяет статусы. Независимые read-only инструменты могут выполняться параллельно через GigaChat SDK 0.2.4. Операции записи выполняются последовательно и требуют подтверждения пользователя.
+Ассистент на базе GigaChat или OpenAI и Model Context Protocol (MCP). Он ищет тикеты в SQLite, работает с Markdown-базой знаний, добавляет комментарии и изменяет статусы. Независимые read-only инструменты могут выполняться параллельно. Операции записи выполняются последовательно и требуют подтверждения пользователя.
 
 ## Требования
 
 - Python 3.12+;
 - пакетный менеджер [uv](https://docs.astral.sh/uv/);
-- ключ GigaChat из [личного кабинета](https://developers.sber.ru/portal/products/gigachat-api);
+- ключ GigaChat из [личного кабинета](https://developers.sber.ru/portal/products/gigachat-api) или ключ OpenAI;
 - около 3 ГБ свободного места для зависимостей, включая PyTorch.
 
 ## Быстрый старт
@@ -19,19 +19,31 @@
    uv sync
    ```
 
-2. Создайте файл окружения и укажите ключ GigaChat:
+2. Создайте файл окружения и настройте нужного LLM-провайдера:
 
    ```bash
    cp .env.example .env
    ```
 
+   Для GigaChat (режим по умолчанию):
+
    ```dotenv
+   LLM_PROVIDER=gigachat
    GIGACHAT_AUTH_KEY=...
    GIGACHAT_BASE_URL=https://api.giga.chat/v1
    MODEL=GigaChat-3-Ultra
    ```
 
-   В `.env` также можно изменить `DATA_DIR`, `TRACE_DIR`, `KB_DIR` и `DB_PATH`.
+   Для OpenAI:
+
+   ```dotenv
+   LLM_PROVIDER=openai
+   OPENAI_API_KEY=...
+   OPENAI_BASE_URL=https://api.openai.com/v1
+   MODEL=gpt-4.1-mini
+   ```
+
+   `OPENAI_BASE_URL` необязателен: без него SDK использует API OpenAI. Его можно задать для OpenAI-совместимого API другой модели. В `.env` также можно изменить `DATA_DIR`, `TRACE_DIR`, `KB_DIR` и `DB_PATH`.
 
 3. Создайте тестовые данные. Эта команда полностью пересоздаёт БД и базу знаний:
 
@@ -75,6 +87,7 @@ logs(id, ticket_id, level, message, created_at)
 ## Структура проекта
 
 - `src/mcp_assistant/client/agent.py` — агентный цикл, история и вызовы инструментов.
+- `src/mcp_assistant/client/llm.py` — GigaChat/OpenAI-клиенты и выбор через `LLM_PROVIDER`.
 - `src/mcp_assistant/client/agent_prompts.py` — системный промпт агента.
 - `src/mcp_assistant/client/mcp_client.py` — подключения к MCP-серверам, вызовы инструментов, чтение ресурсов и получение промптов.
 - `src/mcp_assistant/client/ui/` — CLI и Gradio.
@@ -92,7 +105,7 @@ logs(id, ticket_id, level, message, created_at)
 flowchart LR
     User[Пользователь] --> UI[CLI / Gradio]
     UI --> Agent[Agent<br/>история, лимиты, подтверждения]
-    Agent <--> LLM[GigaChat]
+    Agent <--> LLM[GigaChat / OpenAI]
     Agent --> MCP[MCPClient<br/>инструменты, ресурсы, промпты]
     MCP <-->|stdio| Tickets[MCP tickets]
     MCP <-->|Streamable HTTP| Knowledge[MCP knowledge]
@@ -101,7 +114,7 @@ flowchart LR
     Agent --> Tracer[Tracer<br/>traces/session.jsonl]
 ```
 
-Агент управляет диалогом и вызывает GigaChat, а `MCPClient` предоставляет ему инструменты, ресурсы и промпты обоих MCP-серверов. Операции записи выполняются только после подтверждения пользователя. Все основные события и ошибки попадают в трассировку.
+Агент управляет диалогом и вызывает выбранную LLM, а `MCPClient` предоставляет ему инструменты, ресурсы и промпты обоих MCP-серверов. Операции записи выполняются только после подтверждения пользователя. Все основные события и ошибки попадают в трассировку.
 
 ## Интерфейсы
 
@@ -149,7 +162,7 @@ uv build
 
 ## Оценка агента
 
-Evals выполняют реальные запросы к GigaChat и используют отдельную временную БД. Перед запуском необходимы настройки из `.env` и запущенный сервер базы знаний.
+Evals выполняют реальные запросы к провайдеру, выбранному через `LLM_PROVIDER`, и используют отдельную временную БД. Перед запуском необходимы настройки из `.env` и запущенный сервер базы знаний.
 
 Сценарий содержит `category`, `severity`, `turns` и `expect`. Можно проверять вызовы с аргументами и результатом, параллельные пакеты, подтверждения, число шагов, текст ответа и фактическое состояние БД. Необязательный `setup` задаёт исходное состояние тикетов.
 
@@ -185,6 +198,7 @@ uv run python evals/run_evals.py \
 ## Технологический стек
 
 - `gigachat` — GigaChat SDK;
+- `openai` — OpenAI SDK и OpenAI-совместимые Chat Completions API;
 - `mcp[cli]` — Model Context Protocol;
 - `gradio`, `fastapi`, `uvicorn` — веб-интерфейс;
 - `sentence-transformers`, `torch`, `numpy` — семантический поиск;

@@ -4,14 +4,8 @@ import json
 from typing import Any
 
 from mcp.types import Tool, ToolAnnotations
-from gigachat.models import (
-    ChatCompletionRequest,
-    ChatFunctionsTool,
-    ChatMessage,
-    ChatModelOptions,
-    ChatTool,
-)
 
+from mcp_assistant.client.llm import ChatLLM
 from mcp_assistant.client.mcp_client import MCPClient
 from mcp_assistant.client.tool_converter import ToolConverter
 from mcp_assistant.client.confirmation import ConfirmationProvider
@@ -37,51 +31,16 @@ class UserConfirmationDeniedError(Exception):
 
 
 # ============================================================================
-# 2. КЛИЕНТ LLM (GIGACHAT SDK)
-# ============================================================================
-
-class LLMClient:
-    """Обертка над основным chat-completions контрактом GigaChat SDK."""
-
-    def __init__(self, giga_instance, model):
-        self.giga = giga_instance
-        self.model = model
-
-    async def chat(
-        self,
-        messages: list[dict],
-        functions: list[dict] | None = None,
-    ) -> Any:
-        """Отправляет запрос в GigaChat в отдельном потоке."""
-
-        def _sync_chat():
-            tools = None
-            if functions:
-                tools = [ChatTool(
-                    functions=ChatFunctionsTool(specifications=functions)
-                )]
-            request = ChatCompletionRequest(
-                model=self.model,
-                messages=[ChatMessage.model_validate(message) for message in messages],
-                model_options=ChatModelOptions(parallel_tool_calls=True),
-                tools=tools,
-            )
-            return self.giga.chat.create(request)
-
-        return await asyncio.to_thread(_sync_chat)
-
-
-# ============================================================================
-# 3. АГЕНТНЫЙ ЦИКЛ
+# 2. АГЕНТНЫЙ ЦИКЛ
 # ============================================================================
 
 class Agent:
-    """Агент, который связывает GigaChat, MCP-инструменты и защиту."""
+    """Агент, который связывает LLM, MCP-инструменты и защиту."""
 
     def __init__(
         self,
         mcp_client: MCPClient,
-        llm:LLMClient,
+        llm: ChatLLM,
         tracer: Tracer,
         confirmation: ConfirmationProvider,
         max_steps: int = 8,
