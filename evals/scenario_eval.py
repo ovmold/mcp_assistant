@@ -1,6 +1,7 @@
 import sqlite3
 import time
 from collections import Counter
+from contextlib import closing
 
 from mcp_assistant import config as conf
 
@@ -63,7 +64,7 @@ def apply_setup(scenario: dict) -> None:
         "subject", "body", "status", "priority", "client", "created_at",
         "updated_at", "tags", "issue_type",
     }
-    with sqlite3.connect(conf.DB_PATH) as conn:
+    with closing(sqlite3.connect(conf.DB_PATH)) as conn:
         for ticket_id, fields in tickets.items():
             unknown = set(fields) - allowed_fields
             if unknown:
@@ -77,7 +78,7 @@ def apply_setup(scenario: dict) -> None:
 
 
 def _snapshot_db() -> dict:
-    with sqlite3.connect(conf.DB_PATH) as conn:
+    with closing(sqlite3.connect(conf.DB_PATH)) as conn:
         conn.row_factory = sqlite3.Row
         tickets = {
             row["id"]: dict(row)
@@ -126,28 +127,46 @@ def _collect_calls(tracer: EvalTracer) -> list[dict]:
     return calls
 
 
+def _evaluate_call(expected: dict, actual_calls: list[dict]) -> list[str]:
+    tool = expected["tool"]
+    matching = [
+        call for call in actual_calls
+        if call["tool"] == tool and _args_match(expected.get("args", {}), call["args"])
+    ]
+    if not matching:
+        return [f"Не найден вызов {tool} с аргументами {expected.get('args', {})}"]
+    if "succeeded" in expected and not any(
+        call["succeeded"] is expected["succeeded"] for call in matching
+    ):
+        return [f"Вызов {tool} не имеет succeeded={expected['succeeded']}"]
+    return []
+
+
 def _evaluate_calls(expect: dict, actual_calls: list[dict]) -> list[str]:
     reasons = []
     for expected in expect.get("calls", []):
-        tool = expected["tool"]
-        matching = [
-            call for call in actual_calls
-            if call["tool"] == tool and _args_match(expected.get("args", {}), call["args"])
+        alternatives = expected.get("any_of", [expected])
+        alternative_reasons = [
+            _evaluate_call(alternative, actual_calls)
+            for alternative in alternatives
         ]
-        if not matching:
-            reasons.append(f"Не найден вызов {tool} с аргументами {expected.get('args', {})}")
-            continue
-        if "succeeded" in expected and not any(
-            call["succeeded"] is expected["succeeded"] for call in matching
-        ):
+        if all(alternative_reasons):
             reasons.append(
-                f"Вызов {tool} не имеет succeeded={expected['succeeded']}"
+                f"Не найден ни один допустимый вызов: {alternatives}"
             )
 
     for tool in expect.get("forbidden_tools", []):
         if any(call["tool"] == tool for call in actual_calls):
             reasons.append(f"Выполнен запрещённый инструмент: {tool}")
     return reasons
+
+
+def _batch_matches(expected: dict, batch: list[dict]) -> bool:
+    expected_tools = Counter(expected["tools"])
+    actual_tools = Counter(call["name"].split("__", 1)[-1] for call in batch)
+    if not all(actual_tools[tool] >= count for tool, count in expected_tools.items()):
+        return False
+    return not expected.get("parallel", False) or len(batch) > 1
 
 
 def _evaluate_batches(expect: dict, tracer: EvalTracer) -> list[str]:
@@ -159,18 +178,16 @@ def _evaluate_batches(expect: dict, tracer: EvalTracer) -> list[str]:
     reasons = []
     position = 0
     for expected in expect.get("batches", []):
-        expected_tools = Counter(expected["tools"])
+        alternatives = expected.get("any_of", [expected])
         found = False
         while position < len(actual_batches):
             batch = actual_batches[position]
             position += 1
-            actual_tools = Counter(call["name"].split("__", 1)[-1] for call in batch)
-            if all(actual_tools[tool] >= count for tool, count in expected_tools.items()):
-                if not expected.get("parallel", False) or len(batch) > 1:
-                    found = True
-                    break
+            if any(_batch_matches(alternative, batch) for alternative in alternatives):
+                found = True
+                break
         if not found:
-            reasons.append(f"Не найден пакет вызовов: {expected['tools']}")
+            reasons.append(f"Не найден пакет вызовов: {alternatives}")
     return reasons
 
 
@@ -213,7 +230,7 @@ def _evaluate_db(expect: dict, baseline: dict) -> list[str]:
         return []
 
     reasons = []
-    with sqlite3.connect(conf.DB_PATH) as conn:
+    with closing(sqlite3.connect(conf.DB_PATH)) as conn:
         conn.row_factory = sqlite3.Row
         for ticket_id, fields in expected.get("tickets", {}).items():
             row = conn.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,)).fetchone()

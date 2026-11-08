@@ -25,7 +25,11 @@ from mcp_assistant.client.agent import Agent
 from mcp_assistant.client.llm import create_llm
 from mcp_assistant.client.config_mcp import load_config
 from mcp_assistant.client.mcp_client import MCPClient
-from evals.conf_evals import init_eval_db, SCENARIOS_FILE
+from evals.conf_evals import (
+    SCENARIOS_FILE,
+    configure_eval_tickets_server,
+    init_eval_db,
+)
 from evals.scenario_eval import apply_setup, run_scenario, validate_scenarios
 
 
@@ -37,6 +41,7 @@ async def main() -> None:
     args = parser.parse_args()
 
     config = load_config(conf.CLIENT_DIR / "servers.json")
+    configure_eval_tickets_server(config)
     try:
         llm = create_llm(timeout=config.get("llm_timeout", 60.0))
     except Exception as e:

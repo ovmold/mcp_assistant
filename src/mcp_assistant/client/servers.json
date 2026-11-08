@@ -11,7 +11,11 @@
       "transport": {
         "type": "stdio",
         "command": "python",
-        "args": ["-m", "mcp_assistant.servers.tickets"] 
+        "args": ["-m", "mcp_assistant.servers.tickets"],
+        "env": {
+          "PYTHONUTF8": "1",
+          "PYTHONIOENCODING": "utf-8"
+        }
       },
       "tool_timeout": 30.0,
       "always_confirm_by_server": ["update_status", "add_comment"]

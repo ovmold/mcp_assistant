@@ -43,13 +43,25 @@ def init_eval_db():
             
     # Создаем заново и наполняем данными
     conn = sqlite3.connect(conf.DB_PATH)
-    conn.executescript(db.SCHEMA)
-    conn.executemany(
-        "INSERT INTO tickets (id, subject, body, status, priority, client, "
-        "created_at, updated_at, tags, issue_type) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        SEED_TICKETS 
-    )
-    conn.commit()
-    conn.close()
+    try:
+        conn.executescript(db.SCHEMA)
+        conn.executemany(
+            "INSERT INTO tickets (id, subject, body, status, priority, client, "
+            "created_at, updated_at, tags, issue_type) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            SEED_TICKETS
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def configure_eval_tickets_server(config: dict) -> None:
+    for server in config["servers"]:
+        transport = server.get("transport", {})
+        if server.get("name") != "tickets" or transport.get("type") != "stdio":
+            continue
+        env = transport.setdefault("env", {})
+        env["DATA_DIR"] = str(conf.DATA_DIR)
+        env["DB_PATH"] = str(conf.DB_PATH)
 
