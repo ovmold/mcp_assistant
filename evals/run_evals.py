@@ -83,7 +83,16 @@ async def main() -> None:
 
                 apply_setup(scenario)
                 mcp = MCPClient(config)
-                await mcp.connect_all()
+                try:
+                    await mcp.connect_all()
+                except RuntimeError as e:
+                    print(f"\n{e}")
+                    print(
+                        "Запустите сервер базы знаний в отдельном терминале: "
+                        "uv run python -m mcp_assistant.servers.knowledge"
+                    )
+                    print("После его запуска повторите evals.")
+                    raise SystemExit(1) from None
                 try:
                     agent = Agent(
                         mcp_client=mcp,
@@ -110,6 +119,15 @@ async def main() -> None:
                 for reason in result["reasons"]:
                     print(f"  │    • {reason}")
                 print(f"  │    Инструменты: {result['tool_calls'] or '(не вызывались)'}")
+                for call in result["call_details"]:
+                    print(f"  │    Вызов {call['tool']}:")
+                    print(f"  │      arguments: {call['args']}")
+                    print(f"  │      succeeded: {call['succeeded']}")
+                    detail = call["error"] if call["error"] is not None else call["result"]
+                    if detail is not None:
+                        label = "tool_error" if call["error"] is not None else "tool_result"
+                        detail = str(detail).replace("\n", " ")[:500]
+                        print(f"  │      {label}: {detail!r}")
                 print(f"  │    Шаги: {result['steps']}, токены: {result['tokens']}")
                 answer = (result["final_answer"] or "").replace("\n", " ")[:500]
                 print(f"  │    Ответ агента: {answer!r}")

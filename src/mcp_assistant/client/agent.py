@@ -228,6 +228,15 @@ class Agent:
                     "content": tool_content,
                 })
                 messages.extend(prompt_messages)
+                if prompt_messages and prompt_messages[-1]["role"] == "assistant":
+                    # GigaChat не принимает функции после завершающего сообщения assistant.
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "Выполни приведённые выше инструкции, "
+                            "используя доступные инструменты."
+                        ),
+                    })
 
                 if any(denied for _, _, denied in outcomes):
                     final = "Операция отменена пользователем. Оставшиеся действия не выполнялись."

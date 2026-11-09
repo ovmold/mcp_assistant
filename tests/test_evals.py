@@ -105,6 +105,13 @@ async def test_multi_turn_scenario_checks_calls_and_db(tmp_path, monkeypatch):
 
     assert result["success"], result["reasons"]
     assert result["tool_calls"] == ["add_comment"]
+    assert result["call_details"] == [{
+        "tool": "add_comment",
+        "args": {"ticket_id": 1, "text": "Проверено", "author": "support"},
+        "succeeded": True,
+        "result": {"comment_id": 1},
+        "error": None,
+    }]
 
 
 @pytest.mark.anyio

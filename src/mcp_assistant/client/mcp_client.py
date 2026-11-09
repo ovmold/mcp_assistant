@@ -53,6 +53,7 @@ class MCPClient:
             details = "; ".join(
                 f"{name}: {_format_exception(error)}" for name, error in errors.items()
             )
+            await self.close_all()
             raise RuntimeError(f"Ошибки подключения к MCP-серверам: {details}")
         if not self._clients:
             raise RuntimeError("Не удалось подключиться ни к одному серверу")

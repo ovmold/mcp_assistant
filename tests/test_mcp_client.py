@@ -81,7 +81,8 @@ async def test_connect_all_reports_root_causes_and_rejects_partial_startup(monke
     message = str(exc_info.value)
     assert "knowledge: ConnectionRefusedError: connection refused" in message
     assert "unhandled errors in a TaskGroup" not in message
-    assert "tickets" in client._clients
+    assert client._clients == {}
+    assert client._tools == {}
 
 
 @pytest.mark.anyio

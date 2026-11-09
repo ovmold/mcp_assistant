@@ -108,6 +108,8 @@ def _collect_calls(tracer: EvalTracer) -> list[dict]:
             "tool": data["tool"],
             "args": data.get("arguments", {}),
             "succeeded": None,
+            "result": None,
+            "error": None,
         }
         for event, data in tracer.events
         if event == "tool_call"
@@ -117,6 +119,8 @@ def _collect_calls(tracer: EvalTracer) -> list[dict]:
         for call in calls:
             if call["tool"] == data["tool"] and call["succeeded"] is None:
                 call["succeeded"] = succeeded
+                call["result"] = data.get("result")
+                call["error"] = data.get("error")
                 return
 
     for event, data in tracer.events:
@@ -321,6 +325,7 @@ async def run_scenario(agent, scenario: dict) -> dict:
         "reasons": reasons,
         "final_answer": final_answer,
         "tool_calls": [call["tool"] for call in actual_calls],
+        "call_details": actual_calls,
         "confirmation_asked": [
             data["tool"]
             for event, data in tracer.events

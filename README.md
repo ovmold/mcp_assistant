@@ -40,7 +40,7 @@
    LLM_PROVIDER=openai
    OPENAI_API_KEY=...
    OPENAI_BASE_URL=https://api.openai.com/v1
-   MODEL=gpt-4.1-mini
+   MODEL=...
    ```
 
    `OPENAI_BASE_URL` необязателен: без него SDK использует API OpenAI. Его можно задать для OpenAI-совместимого API другой модели. В `.env` также можно изменить `DATA_DIR`, `TRACE_DIR`, `KB_DIR` и `DB_PATH`.
@@ -182,6 +182,17 @@ uv run python evals/run_evals.py \
 - `--scenario` — ID одного сценария;
 - `--file` — YAML-файл со сценариями;
 - `--runs` — количество повторений, по умолчанию 3.
+
+Для корректного отображения русского текста в PowerShell на Windows выполните перед запуском сценариев:
+
+```powershell
+chcp 65001 | Out-Null
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+```
+
+Эти настройки действуют только в текущей PowerShell-сессии. После них сценарии запускаются обычной командой `uv run python evals/run_evals.py`. Кодировка MCP-процесса `tickets` задана отдельно в `src/mcp_assistant/client/servers.json`.
 
 Отчёт включает Success Rate, точность выбора инструментов, среднее число шагов, время и расход токенов. Примеры вывода приведены в `EVALS.md`.
 

@@ -221,6 +221,15 @@ def mock_system_prompt(monkeypatch) -> None:
 # ТЕСТЫ
 # ============================================================================
 
+
+def test_system_prompt_requires_explicit_comment_author():
+    prompt = agent_prompts.SYSTEM_PROMPT_TEMPLATE.casefold()
+
+    assert "не вызывай add_comment" in prompt
+    assert "никогда не подставляй" in prompt
+    assert "support или любого другого автора по умолчанию" in prompt
+
+
 @pytest.mark.anyio
 async def test_normal_flow(mock_mcp_client, mock_tracer, mock_confirmation):
     """Один вызов инструмента, затем финальный ответ."""
@@ -1145,7 +1154,7 @@ async def test_denial_stops_remaining_batch(mock_tools, mock_tracer):
     llm = MockLLMClient([
         MockLLMClient._make_parallel_function_call_response([
             ("tickets__update_status", {"ticket_id": 1, "status": "closed"}),
-            ("tickets__add_comment", {"ticket_id": 2, "text": "comment", "author": "support"}),
+            ("tickets__update_status", {"ticket_id": 2, "status": "closed"}),
         ])
     ])
     agent = Agent(mcp, llm, mock_tracer, confirmation)
@@ -1322,3 +1331,6 @@ async def test_agent_applies_prompt_then_reads_resource(
         and "Разбери тикет 1" in message.get("content", "")
         for message in llm.history[1]
     )
+    assert llm.history[1][-2]["role"] == "assistant"
+    assert llm.history[1][-1]["role"] == "user"
+    assert "Выполни приведённые выше инструкции" in llm.history[1][-1]["content"]
