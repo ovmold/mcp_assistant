@@ -943,7 +943,6 @@ dependencies = [
     { name = "numpy" },
     { name = "openai" },
     { name = "python-dotenv" },
-    { name = "pyyaml" },
     { name = "sentence-transformers" },
     { name = "torch", version = "2.15.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
     { name = "torch", version = "2.15.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
@@ -954,6 +953,7 @@ dependencies = [
 dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -966,7 +966,6 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.5.4" },
     { name = "openai", specifier = ">=1.0.0" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "sentence-transformers", specifier = ">=6.1.0" },
     { name = "torch", specifier = ">=2.8", index = "https://download.pytorch.org/whl/cpu" },
     { name = "uvicorn", specifier = ">=0.54.0" },
@@ -976,6 +975,7 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
 ]
 
 [[package]]
