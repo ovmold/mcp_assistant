@@ -65,6 +65,19 @@
 
 При первом запуске установка зависимостей и скачивание модели эмбеддингов могут занять дополнительное время.
 
+## Подключение к Kimi Code Desktop
+
+Для подключения MCP-серверов `tickets` и `knowledge` к Kimi Code Desktop создан проектный файл `.kimi-code/mcp.json`:
+
+- `tickets` запускается автоматически через stdio командой `uv run python -m mcp_assistant.servers.tickets`;
+- `knowledge` подключается по HTTP к `http://127.0.0.1:8000/mcp`, поэтому перед созданием сессии его нужно запустить отдельно:
+
+  ```bash
+  uv run python -m mcp_assistant.servers.knowledge
+  ```
+
+Откройте папку проекта в Kimi Code Desktop и создайте новую сессию. В поле `cwd` для `tickets` указан абсолютный путь к проекту; если репозиторий находится в другом каталоге, измените его в `.kimi-code/mcp.json`. Подробнее о формате конфигурации — в [документации Kimi Code](https://www.kimi.com/code/docs/en/kimi-code-cli/customization/mcp.html).
+
 ## Тестовые данные
 
 Каждый запуск seed из быстрого старта полностью пересоздаёт БД и базу знаний. Дополнительные Markdown-файлы в `KB_DIR` удаляются. Не запускайте его с данными, которые нужно сохранить.
@@ -171,33 +184,22 @@ Evals выполняют реальные запросы к провайдеру
 
 Сценарий содержит `category`, `severity`, `turns` и `expect`. Можно проверять вызовы с аргументами и результатом, параллельные пакеты, подтверждения, число шагов, текст ответа и фактическое состояние БД. Необязательный `setup` задаёт исходное состояние тикетов. В `calls` и `batches` поле `any_of` задаёт список допустимых альтернатив: достаточно совпадения с одной из них.
 
-```bash
-uv run python evals/run_evals.py
+```powershell
+uv run python -X utf8 evals/run_evals.py
 ```
 
 Параметры:
 
-```bash
-uv run python evals/run_evals.py \
-  --scenario SCENARIO_ID \
-  --file evals/scenarios.yaml \
+```powershell
+uv run python -X utf8 evals/run_evals.py `
+  --scenario SCENARIO_ID `
+  --file evals/scenarios.yaml `
   --runs 3
 ```
 
 - `--scenario` — ID одного сценария;
 - `--file` — YAML-файл со сценариями;
 - `--runs` — количество повторений, по умолчанию 3.
-
-Для корректного отображения русского текста в PowerShell на Windows выполните перед запуском сценариев:
-
-```powershell
-chcp 65001 | Out-Null
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-$env:PYTHONUTF8 = "1"
-$env:PYTHONIOENCODING = "utf-8"
-```
-
-Эти настройки действуют только в текущей PowerShell-сессии. После них сценарии запускаются обычной командой `uv run python evals/run_evals.py`. Кодировка MCP-процесса `tickets` задана отдельно в `src/mcp_assistant/client/servers.json`.
 
 Отчёт включает Success Rate, точность выбора инструментов, среднее число шагов, время и расход токенов. Примеры вывода приведены в `EVALS.md`.
 
