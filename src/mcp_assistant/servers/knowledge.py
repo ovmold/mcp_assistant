@@ -1,9 +1,12 @@
 """
 MCP-сервер `knowledge` (транспорт Streamable HTTP)
 
-Сервер работает поверх папки со статьями в Markdown.
+Сервер работает поверх папки со статьями в Markdown. При запуске загружает
+локальную модель эмбеддингов и индексирует статьи.
 
-- **Tools:** `search_kb(query, top_k)` — поиск по статьям. Хватит BM25 или локальных эмбеддингов, внешний векторный сервис не нужен. `get_article(article_type)`.
+- **Tools:** `search_kb(query, top_k=3)` — гибридный поиск по статьям,
+  объединяющий BM25 и локальные эмбеддинги без внешнего векторного сервиса;
+  `get_article(article_type)` — текст статьи.
 - **Resources:** `kb://{article_type}` — текст статьи.
 """
 
@@ -225,7 +228,7 @@ def search_kb(query: str, top_k: int = 3) -> list[str]:
     if _KB_EMBEDDINGS is None:
         return []
 
-    # 1. Кодирует запрос
+    # Кодирует запрос
     query_embedding = _EMBEDDER.encode(query, normalize_embeddings=True)
 
     semantic_scores = np.dot(_KB_EMBEDDINGS, query_embedding)
@@ -236,10 +239,10 @@ def search_kb(query: str, top_k: int = 3) -> list[str]:
     else:
         scores = semantic_scores
 
-    # 3. Сортирует и берет top_k
+    # Сортирует и берет top_k
     top_indices = np.argsort(scores)[::-1][:top_k]
 
-    # 4. Фильтрует нерелевантные (отрицательные или близкие к нулю)
+    # Фильтрует нерелевантные (отрицательные или близкие к нулю)
     result = [
         _KB_FILENAMES[i]
         for i in top_indices
@@ -280,14 +283,14 @@ def get_article(article_type: str) -> str:
     """
     try:
         return _read_article(article_type)
+    except UnicodeDecodeError as e:
+        raise ToolError(f"Файл статьи имеет некорректную кодировку: {e}") from e
     except ValueError as e:
         raise ToolError(str(e)) from e
     except FileNotFoundError as e:
         raise ToolError(f"Статья '{article_type}' не найдена.") from e
     except PermissionError as e:
         raise ToolError("Ошибка: нет прав на чтение файла статьи.") from e
-    except UnicodeDecodeError as e:
-        raise ToolError(f"Файл статьи имеет некорректную кодировку: {e}") from e
     except Exception as e:
         raise ToolError(f"Ошибка чтения файла статьи: {e}") from e
 
@@ -298,10 +301,22 @@ def get_article_resource(article_type: str) -> str:
     """Возвращает статью как MCP-ресурс `kb://{article_type}`."""
     try:
         return _read_article(article_type)
+    except UnicodeDecodeError as e:
+        raise UnicodeDecodeError(
+            e.encoding,
+            e.object,
+            e.start,
+            e.end,
+            f"Файл статьи имеет некорректную кодировку: {e.reason}",
+        ) from e
+    except ValueError as e:
+        raise ValueError(str(e)) from e
     except FileNotFoundError as e:
         raise FileNotFoundError(f"Статья '{article_type}' не найдена.") from e
     except PermissionError as e:
         raise PermissionError("Ошибка: нет прав на чтение статьи.") from e
+    except Exception as e:
+        raise Exception(f"Ошибка чтения файла статьи: {e}") from e
 
 def main() -> None:
     conf.load_env(conf.PROJECT_DIR / ".env")

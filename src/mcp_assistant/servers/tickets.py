@@ -1,11 +1,18 @@
 """
 MCP-сервер `tickets` (транспорт stdio)
 
-Сервер работает поверх SQLite с тикетами. В таблице хранятся id, клиент, тема, текст, приоритет, статус, даты создания и обновления.
+Сервер работает поверх SQLite. Основная таблица tickets хранит данные тикета,
+включая тему, текст, клиента, приоритет, статус, даты, теги и тип проблемы.
+Комментарии и логи хранятся в связанных таблицах messages и logs.
 
-- **Tools:** `search_tickets(query, status?, priority?, customer?, limit)`, `get_ticket(id)`, `add_comment(id, text)`, `update_status(id, status, comment)`.
-- **Resources:** `ticket://{id}` — полная карточка тикета; `tickets://stats` — сводка по статусам и приоритетам.
-- **Prompts:** `analyze_ticket(id)` — шаблон разбора тикета: суть, вероятная причина, следующий шаг.
+- **Tools:** `search_tickets(query?, status?, priority?, customer?,
+  created_from?, created_to?, limit)`, `get_ticket(ticket_id)`,
+  `add_comment(ticket_id, text, author)`,
+  `update_status(ticket_id, status, comment, author?)`.
+- **Resources:** `ticket://{ticket_id}` — полная карточка тикета;
+  `tickets://stats` — сводка по статусам и приоритетам.
+- **Prompts:** `analyze_ticket(ticket_id)` — шаблон разбора тикета:
+  суть, вероятная причина, следующий шаг.
 """
 
 from mcp.server.mcpserver import MCPServer
@@ -48,6 +55,10 @@ def _db_cursor() -> Iterator[sqlite3.Cursor]:
         conn.close()
 
 def _parse_date_filter(value: str | None, name: str) -> tuple[datetime, bool] | None:
+    """Разбирает ISO 8601 и возвращает (время UTC, признак даты без времени) или None.
+
+    Дата-время без часового пояса считается заданной в UTC.
+    """
     if value is None or not value.strip():
         return None
     try:
@@ -181,7 +192,11 @@ def _load_ticket(ticket_id: int) -> Ticket | None:
     return Ticket(**dict(row), messages=messages, logs=logs)
 
 
-@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
+@mcp.tool(
+    annotations = ToolAnnotations(
+        readOnlyHint=True
+    )
+)
 def get_ticket(ticket_id: int) -> Ticket:
     """Возвращает полный тикет по ID, включая переписку и логи."""
     ticket = _load_ticket(ticket_id)
@@ -524,5 +539,6 @@ def analyze_ticket(ticket_id: str) -> list:
     ]
 
 if __name__ == "__main__":
+    # Загружает локальную конфигурацию и обновляет пути перед запуском сервера
     conf.load_env(conf.PROJECT_DIR / ".env")
     mcp.run()

@@ -95,6 +95,14 @@ def test_get_article_not_found(temp_kb):
         get_article("nonexisting-article")
 
 
+def test_get_article_invalid_encoding(temp_kb):
+    """Ошибка кодировки не перехватывается общим обработчиком ValueError."""
+    (temp_kb / "broken.md").write_bytes(b"\xff\xfe\xff")
+
+    with pytest.raises(ToolError, match="некорректную кодировку"):
+        get_article("broken")
+
+
 def test_get_article_path_traversal(temp_kb):
     """Попытка выйти за пределы KB_DIR вызывает ToolError (валидация)."""
     with pytest.raises(ToolError, match=r"(?i)недопустим"):
@@ -136,11 +144,22 @@ def test_get_article_resource_missing(temp_kb):
 
 
 def test_get_article_resource_invalid_encoding(temp_kb):
-    """Файл в некорректной кодировке вызывает UnicodeDecodeError."""
+    """Файл в некорректной кодировке вызывает UnicodeDecodeError с пояснением."""
     (temp_kb / "broken.md").write_bytes(b"\xff\xfe\xff")
 
-    with pytest.raises(UnicodeDecodeError):
+    with pytest.raises(UnicodeDecodeError, match="некорректную кодировку"):
         get_article_resource("broken")
+
+
+def test_get_article_resource_unexpected_read_error(temp_kb, monkeypatch):
+    """Непредвиденная ошибка чтения ресурса получает понятное сообщение."""
+    def fail_read(article_type):
+        raise OSError("диск недоступен")
+
+    monkeypatch.setattr(knowledge_module, "_read_article", fail_read)
+
+    with pytest.raises(Exception, match="Ошибка чтения файла статьи: диск недоступен"):
+        get_article_resource("payment-502")
 
 
 def test_main_initializes_kb_before_serving(monkeypatch):
