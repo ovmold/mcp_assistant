@@ -1,12 +1,22 @@
+"""Преобразует MCP-инструменты во внутренние спецификации для LLM.
+
+Хранит соответствие имён с префиксом сервера исходным вызовам MCP
+и метаданные для проверки необходимости подтверждения.
+"""
+
 from mcp.types import Tool
 
 class ToolConverter:
     def __init__(self) -> None:
-        self.gigachat_tools = []  # Список для GigaChat
+        self.tool_specs = []  # Общие спецификации инструментов для LLM
         self.mapping = {}         # "tickets__search": ("tickets", "search")
         self._raw: dict[str, Tool] = {} # prefixed → raw Tool
 
-    def add_server_tools(self, server_name: str, mcp_tools: list[Tool]) -> None:
+    def register_server_tools(self, server_name: str, mcp_tools: list[Tool]) -> None:
+        """Регистрирует MCP-инструменты сервера для вызовов через LLM.
+
+        Сохраняет спецификации с префиксом сервера, соответствие имён и исходные Tool.
+        """
         for tool in mcp_tools:
             prefixed_name = f"{server_name}__{tool.name}"
             
@@ -16,14 +26,14 @@ class ToolConverter:
                 "parameters": tool.input_schema or {"type": "object", "properties": {}},
             }
             
-            self.gigachat_tools.append(func_dict)
+            self.tool_specs.append(func_dict)
             
             self.mapping[prefixed_name] = (server_name, tool.name)
             self._raw[prefixed_name] = tool
 
-    def get_gigachat_functions(self) -> list[dict]:
-        """Возвращает готовый список для GigaChat."""
-        return self.gigachat_tools
+    def get_tool_specs(self) -> list[dict]:
+        """Возвращает внутренние спецификации инструментов для LLM."""
+        return self.tool_specs
 
     def resolve(self, prefixed_name: str) -> tuple[str, str] | None:
         """Возвращает (server_name, original_tool_name)."""

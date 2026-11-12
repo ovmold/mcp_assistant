@@ -62,10 +62,10 @@ class Agent:
 
         self.converter = ToolConverter()
         for server, tools in self.mcp.get_all_tools().items():
-            self.converter.add_server_tools(server, tools)
+            self.converter.register_server_tools(server, tools)
         self._add_capability_tools()
 
-        self.gigachat_functions = self.converter.get_gigachat_functions()
+        self.gigachat_functions = self.converter.get_tool_specs()
         self.system_prompt = agent_prompts.build_system_prompt(self.gigachat_functions)
 
     def _add_capability_tools(self) -> None:
@@ -116,7 +116,7 @@ class Agent:
                     annotations=ToolAnnotations(readOnlyHint=True),
                 ))
 
-            self.converter.add_server_tools(server, capability_tools)
+            self.converter.register_server_tools(server, capability_tools)
 
     # --- управление историей ------------------------------------------------
 

@@ -40,6 +40,7 @@ class Tracer:
         """Закрывает файл."""
         self._file.close()
 
+    # Поддерживают with: возвращают трассировщик на входе и закрывают файл на выходе.
     def __enter__(self) -> "Tracer":
         return self
 

@@ -50,7 +50,7 @@ def load_config(path: str | Path = "servers.json") -> dict:
                 )
                 # args не трогает: там имена модулей, а не файлы
             else:
-                # Разрешает относительные пути в args
+                # Преобразует относительные пути в args от PROJECT_DIR; флаги и значения не трогает
                 transport["args"] = [
                     str((conf.PROJECT_DIR / arg).resolve())
                     if not Path(arg).is_absolute() and _looks_like_path(arg)

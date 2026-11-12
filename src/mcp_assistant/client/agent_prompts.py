@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+from mcp_assistant.storage.timestamps import to_iso
+
 # ----------------------------- System Prompt для агента ------------------------------
 
 SYSTEM_PROMPT_TEMPLATE = """Ты — ассистент службы поддержки. Твоя задача — помогать пользователю
@@ -52,7 +54,7 @@ SYSTEM_PROMPT_TEMPLATE = """Ты — ассистент службы подде�
 """
 
 def build_tools_description(tools: list[dict]) -> str:
-    """Собирает описание инструментов из списка GigaChat-функций."""
+    """Собирает описание инструментов из внутреннего списка описаний инструментов"""
     if not tools:
         return "(инструменты не подключены)"
 
@@ -80,5 +82,5 @@ def build_system_prompt(tools: list[dict]) -> str:
     """Возвращает готовый системный промпт под конкретный набор инструментов."""
     return SYSTEM_PROMPT_TEMPLATE.format(
         tools_description=build_tools_description(tools),
-        current_datetime=datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        current_datetime=to_iso(datetime.now(timezone.utc)),
     )

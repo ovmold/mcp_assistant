@@ -30,23 +30,23 @@ def make_tool(
 def _converter_with(tool: SimpleNamespace, server: str = "tickets") -> ToolConverter:
     """Конвертер с одним инструментом — сокращает boilerplate."""
     conv = ToolConverter()
-    conv.add_server_tools(server, [tool])
+    conv.register_server_tools(server, [tool])
     return conv
 
 
 # ============================================================================
-# add_server_tools
+# register_server_tools
 # ============================================================================
 
 def test_add_single_tool() -> None:
     """Один инструмент корректно преобразуется в формат GigaChat."""
     converter = ToolConverter()
-    converter.add_server_tools("tickets", [
+    converter.register_server_tools("tickets", [
         make_tool("search", "Поиск тикетов", {"type": "object"}),
     ])
 
-    assert len(converter.gigachat_tools) == 1
-    func = converter.gigachat_tools[0]
+    assert len(converter.tool_specs) == 1
+    func = converter.tool_specs[0]
     assert func["name"] == "tickets__search"
     assert func["description"] == "Поиск тикетов"
     assert func["parameters"] == {"type": "object"}
@@ -55,65 +55,65 @@ def test_add_single_tool() -> None:
 def test_add_multiple_tools() -> None:
     """Несколько инструментов с одного сервера."""
     converter = ToolConverter()
-    converter.add_server_tools("tickets", [
+    converter.register_server_tools("tickets", [
         make_tool("search"),
         make_tool("update_status"),
     ])
 
-    assert len(converter.gigachat_tools) == 2
-    names = [t["name"] for t in converter.gigachat_tools]
+    assert len(converter.tool_specs) == 2
+    names = [t["name"] for t in converter.tool_specs]
     assert names == ["tickets__search", "tickets__update_status"]
 
 
 def test_add_tools_from_multiple_servers() -> None:
     """Инструменты с разных серверов получают разные префиксы."""
     converter = ToolConverter()
-    converter.add_server_tools("tickets", [make_tool("search")])
-    converter.add_server_tools("kb", [make_tool("search")])
+    converter.register_server_tools("tickets", [make_tool("search")])
+    converter.register_server_tools("kb", [make_tool("search")])
 
-    names = [t["name"] for t in converter.gigachat_tools]
+    names = [t["name"] for t in converter.tool_specs]
     assert names == ["tickets__search", "kb__search"]
 
 
 def test_missing_description_becomes_empty_string() -> None:
     """Если description=None, подставляется пустая строка."""
     converter = _converter_with(make_tool("t", description=None), server="srv")
-    assert converter.gigachat_tools[0]["description"] == ""
+    assert converter.tool_specs[0]["description"] == ""
 
 
 def test_missing_schema_gets_default() -> None:
     """Если input_schema=None, подставляется пустая схема."""
     converter = _converter_with(make_tool("t", schema=None), server="srv")
-    params = converter.gigachat_tools[0]["parameters"]
+    params = converter.tool_specs[0]["parameters"]
     assert params == {"type": "object", "properties": {}}
 
 
 def test_empty_tools_list() -> None:
     """Пустой список инструментов не ломает конвертер."""
     converter = ToolConverter()
-    converter.add_server_tools("srv", [])
+    converter.register_server_tools("srv", [])
 
-    assert converter.gigachat_tools == []
+    assert converter.tool_specs == []
     assert converter.resolve("srv__anything") is None
 
 
 # ============================================================================
-# get_gigachat_functions
+# get_tool_specs
 # ============================================================================
 
-def test_get_gigachat_functions_returns_all_tools() -> None:
-    """get_gigachat_functions() возвращает все добавленные инструменты."""
+def test_get_tool_specs_returns_all_tools() -> None:
+    """get_tool_specs() возвращает все добавленные инструменты."""
     converter = _converter_with(make_tool("search"))
 
-    functions = converter.get_gigachat_functions()
+    functions = converter.get_tool_specs()
     assert len(functions) == 1
     assert functions[0]["name"] == "tickets__search"
 
 
-def test_get_gigachat_functions_empty() -> None:
+def test_get_tool_specs_empty() -> None:
     """Для пустого конвертера возвращает пустой список."""
     converter = ToolConverter()
-    assert converter.get_gigachat_functions() == []
+    assert converter.get_tool_specs() == []
 
 
 # ============================================================================
@@ -244,15 +244,15 @@ def test_requires_confirmation_only_readonly_default() -> None:
 def test_full_workflow() -> None:
     """Полный сценарий: добавить → получить список → resolve."""
     converter = ToolConverter()
-    converter.add_server_tools("tickets", [
+    converter.register_server_tools("tickets", [
         make_tool("search", "Поиск"),
         make_tool("update_status", "Обновление"),
     ])
-    converter.add_server_tools("kb", [
+    converter.register_server_tools("kb", [
         make_tool("get_article", "Статья"),
     ])
 
-    names = [t["name"] for t in converter.gigachat_tools]
+    names = [t["name"] for t in converter.tool_specs]
     assert len(names) == len(set(names)) == 3
 
     for name in names:
@@ -262,13 +262,13 @@ def test_full_workflow() -> None:
 
 
 def test_mapping_and_tools_consistent() -> None:
-    """Каждый инструмент в gigachat_tools имеет запись в mapping."""
+    """Каждый инструмент в tool_specs имеет запись в mapping."""
     converter = ToolConverter()
-    converter.add_server_tools("tickets", [
+    converter.register_server_tools("tickets", [
         make_tool("search"),
         make_tool("update_status"),
     ])
-    converter.add_server_tools("kb", [make_tool("get_article")])
+    converter.register_server_tools("kb", [make_tool("get_article")])
 
-    names = [t["name"] for t in converter.gigachat_tools]
+    names = [t["name"] for t in converter.tool_specs]
     assert set(names) == set(converter.mapping.keys())
