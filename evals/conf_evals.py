@@ -32,7 +32,7 @@ SEED_TICKETS = [
 ]
 
 # Функция для пересоздания базы данных
-def init_eval_db():
+def init_eval_db() -> None:
     Path(conf.DB_PATH).parent.mkdir(parents=True, exist_ok=True)
 
     # Удаляем старые файлы базы (включая WAL и SHM журналы SQLite)

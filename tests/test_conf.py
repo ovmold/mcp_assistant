@@ -3,7 +3,7 @@ from pathlib import Path
 from mcp_assistant import config as conf
 
 
-def test_load_env_updates_data_paths(tmp_path, monkeypatch):
+def test_load_env_updates_data_paths(tmp_path, monkeypatch) -> None:
     names = ("DATA_DIR", "TRACE_DIR", "KB_DIR", "DB_PATH")
     for name in names:
         monkeypatch.delenv(name, raising=False)

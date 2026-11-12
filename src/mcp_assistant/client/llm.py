@@ -31,7 +31,7 @@ class ChatLLM(Protocol):
 class GigaChatLLMClient:
     """Обертка над основным chat-completions контрактом GigaChat SDK."""
 
-    def __init__(self, giga_instance, model):
+    def __init__(self, giga_instance, model) -> None:
         self.giga = giga_instance
         self.model = model
 
@@ -42,7 +42,7 @@ class GigaChatLLMClient:
     ) -> Any:
         """Отправляет запрос в GigaChat в отдельном потоке."""
 
-        def _sync_chat():
+        def _sync_chat() -> ChatCompletionResponse:
             tools = None
             if functions:
                 tools = [ChatTool(
@@ -65,7 +65,7 @@ class GigaChatLLMClient:
 class OpenAILLMClient:
     """Адаптер OpenAI Chat Completions к внутреннему контракту агента."""
 
-    def __init__(self, openai_instance: OpenAI, model: str):
+    def __init__(self, openai_instance: OpenAI, model: str) -> None:
         self.client = openai_instance
         self.model = model
 
@@ -74,7 +74,7 @@ class OpenAILLMClient:
         messages: list[dict],
         functions: list[dict] | None = None,
     ) -> ChatCompletionResponse:
-        def _sync_chat():
+        def _sync_chat() -> ChatCompletionResponse:
             request = {
                 "model": self.model,
                 "messages": self._to_openai_messages(messages),

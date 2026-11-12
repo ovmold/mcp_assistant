@@ -37,7 +37,7 @@ class CLIConfirmation:
 class GradioConfirmation:
     """Подтверждение приходит следующим сообщением пользователя в чате."""
 
-    def __init__(self, timeout: float = 600.0):
+    def __init__(self, timeout: float = 600.0) -> None:
         self._future: asyncio.Future[bool] | None = None
         self._request: tuple[str, dict] | None = None
         self._requested = asyncio.Event()

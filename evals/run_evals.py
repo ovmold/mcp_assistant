@@ -138,7 +138,7 @@ async def main() -> None:
     print_results(results_by_scenario, args.runs)
 
 
-def print_results(results_by_scenario: dict, runs_count: int):
+def print_results(results_by_scenario: dict, runs_count: int) -> None:
     print("\n" + "=" * 105)
     print("ИТОГОВЫЙ ОТЧЕТ")
     print("=" * 105)

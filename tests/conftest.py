@@ -1,7 +1,9 @@
 """Фикстуры для тестов MCP-серверов."""
 
 import sqlite3
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import pytest
 from mcp import Client
@@ -24,7 +26,7 @@ SEED_TICKETS = [
 
 
 @pytest.fixture
-def temp_db(tmp_path, monkeypatch):
+def temp_db(tmp_path, monkeypatch) -> Path:
     """Создает временную SQLite-базу с полной схемой и тестовыми данными."""
     db_path = tmp_path / "test_tickets.db"
     conn = sqlite3.connect(db_path)
@@ -42,7 +44,7 @@ def temp_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def temp_kb(tmp_path, monkeypatch):
+def temp_kb(tmp_path, monkeypatch) -> Path:
     """Создает временную директорию базы знаний с .md-файлами."""
     kb_dir = tmp_path / "kb"
     kb_dir.mkdir()
@@ -79,7 +81,7 @@ def temp_kb(tmp_path, monkeypatch):
 # ---------- MCP-сессия в памяти ----------
 
 @asynccontextmanager
-async def _mcp_in_memory_session(mcp_server):
+async def _mcp_in_memory_session(mcp_server) -> AsyncIterator[Client]:
     """
     Открывает MCP-клиент, подключенный к серверу через in-memory transport.
     Работает без subprocess, без сети.
@@ -89,7 +91,7 @@ async def _mcp_in_memory_session(mcp_server):
 
 
 @pytest.fixture
-async def tickets_client(temp_db):
+async def tickets_client(temp_db) -> AsyncIterator[Client]:
     """MCP-клиент, подключённый к серверу tickets в памяти."""
     from mcp_assistant.servers import tickets as tickets_mod
     async with Client(tickets_mod.mcp) as client:
@@ -97,7 +99,7 @@ async def tickets_client(temp_db):
 
 
 @pytest.fixture
-async def knowledge_client(temp_kb):
+async def knowledge_client(temp_kb) -> AsyncIterator[Client]:
     """MCP-клиент, подключённый к серверу knowledge в памяти."""
     from mcp_assistant.servers import knowledge as knowledge_mod
     async with Client(knowledge_mod.mcp) as client:
@@ -105,7 +107,7 @@ async def knowledge_client(temp_kb):
 
 
 @pytest.fixture
-def anyio_backend():
+def anyio_backend() -> str:
     """
     Указывает anyio, какой асинхронный бэкенд использовать для тестов.
     

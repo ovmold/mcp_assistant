@@ -1,7 +1,7 @@
 from mcp.types import Tool
 
 class ToolConverter:
-    def __init__(self):
+    def __init__(self) -> None:
         self.gigachat_tools = []  # Список для GigaChat
         self.mapping = {}         # "tickets__search": ("tickets", "search")
         self._raw: dict[str, Tool] = {} # prefixed → raw Tool

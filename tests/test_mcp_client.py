@@ -7,34 +7,34 @@ from mcp_assistant.client.mcp_client import MCPClient
 
 
 @pytest.mark.anyio
-async def test_stdio_server_does_not_inherit_parent_secrets(monkeypatch):
+async def test_stdio_server_does_not_inherit_parent_secrets(monkeypatch) -> None:
     monkeypatch.setenv("GIGACHAT_AUTH_KEY", "test-secret")
     captured = {}
 
-    def fake_stdio_client(params):
+    def fake_stdio_client(params) -> object:
         captured["params"] = params
         return object()
 
     class FakeClient:
-        def __init__(self, transport):
+        def __init__(self, transport) -> None:
             self.transport = transport
 
-        async def __aenter__(self):
+        async def __aenter__(self) -> 'FakeClient':
             return self
 
-        async def __aexit__(self, *args):
+        async def __aexit__(self, *args) -> None:
             return None
 
-        async def list_tools(self):
+        async def list_tools(self) -> SimpleNamespace:
             return SimpleNamespace(tools=[])
 
-        async def list_resources(self):
+        async def list_resources(self) -> SimpleNamespace:
             return SimpleNamespace(resources=[])
 
-        async def list_resource_templates(self):
+        async def list_resource_templates(self) -> SimpleNamespace:
             return SimpleNamespace(resource_templates=[])
 
-        async def list_prompts(self):
+        async def list_prompts(self) -> SimpleNamespace:
             return SimpleNamespace(prompts=[])
 
     monkeypatch.setattr(mcp_client_module, "stdio_client", fake_stdio_client)
@@ -59,13 +59,13 @@ async def test_stdio_server_does_not_inherit_parent_secrets(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_connect_all_reports_root_causes_and_rejects_partial_startup(monkeypatch):
+async def test_connect_all_reports_root_causes_and_rejects_partial_startup(monkeypatch) -> None:
     client = MCPClient({"servers": [
         {"name": "tickets"},
         {"name": "knowledge"},
     ]})
 
-    async def fake_connect(name, config):
+    async def fake_connect(name, config) -> None:
         if name == "knowledge":
             raise ExceptionGroup("network", [
                 ExceptionGroup("connect", [ConnectionRefusedError("connection refused")])
@@ -86,7 +86,7 @@ async def test_connect_all_reports_root_causes_and_rejects_partial_startup(monke
 
 
 @pytest.mark.anyio
-async def test_read_resource_and_get_prompt(tickets_client):
+async def test_read_resource_and_get_prompt(tickets_client) -> None:
     client = MCPClient({"servers": []})
     client._clients["tickets"] = tickets_client
     client._servers["tickets"] = {"tool_timeout": 5.0}

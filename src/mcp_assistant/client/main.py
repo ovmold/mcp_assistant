@@ -8,11 +8,7 @@ import asyncio
 import sys
 import argparse
 
-import uvicorn
-from fastapi import FastAPI
-import gradio as gr
-
-from mcp_assistant.client.ui.gradio import build_gradio_ui
+from mcp_assistant.client.ui.gradio import run_gradio
 from mcp_assistant.client.ui.cli import run_cli
 from mcp_assistant.client.agent import Agent
 from mcp_assistant.client.llm import create_llm
@@ -28,8 +24,17 @@ async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ui", choices=["cli", "gradio"], default="cli",
                         help="Какой интерфейс запустить")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=7860)
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Адрес веб-сервера (только для --ui gradio)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=7860,
+        help="Порт веб-сервера (только для --ui gradio)",
+    )
     args = parser.parse_args()
 
     # 1. Загружает окружение и конфигурацию
@@ -80,8 +85,8 @@ async def main() -> int:
             max_steps=config.get("max_steps", 8),
             always_confirm_tools=always_confirm_by_server,
             max_history_messages=config.get("max_history_messages", 40),
-            max_history_chars=config.get("max_history_chars", 60_000),
-            max_tool_result_chars=config.get("max_tool_result_chars", 12_000),
+            max_history_chars=config.get("max_history_chars", 60000),
+            max_tool_result_chars=config.get("max_tool_result_chars", 12000),
         )
 
         # 7. Запуск выбранного интерфейса
@@ -107,29 +112,6 @@ async def main() -> int:
                 llm.close()
 
     return 0
-
-
-async def run_gradio(
-    agent: Agent,
-    host: str,
-    port: int,
-    session_timeout: float = 300.0,
-) -> None:
-    """Запускает Gradio внутри текущего event loop.
-
-    Использует uvicorn.Server + mount_gradio_app, а НЕ demo.launch(),
-    чтобы обработчики работали в том же цикле, что и MCPClient.
-    """
-    demo = build_gradio_ui(agent, session_timeout=session_timeout)
-    demo.queue()  # очередь нужна для async-обработчиков
-
-    app = FastAPI()
-    app = gr.mount_gradio_app(app, demo, path="/")
-
-    server = uvicorn.Server(
-        uvicorn.Config(app, host=host, port=port, log_level="info")
-    )
-    await server.serve()
 
 
 if __name__ == "__main__":

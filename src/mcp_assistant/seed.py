@@ -210,7 +210,7 @@ def write_db(tickets: list[Ticket]) -> None:
 
 # ----------------------------- CLI --------------------------------------
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Seed данных для ассистента «Облачко»")
     parser.add_argument("--tickets", type=int, default=seed_data.N_TICKETS)
     args = parser.parse_args()

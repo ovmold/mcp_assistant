@@ -112,7 +112,7 @@ def _tokenize(text: str) -> list[str]:
 class _BM25Index:
     """Небольшой BM25-индекс для лексических совпадений без внешних сервисов."""
 
-    def __init__(self, documents: list[str]):
+    def __init__(self, documents: list[str]) -> None:
         self._documents = [_tokenize(document) for document in documents]
         self._doc_lengths = np.array([len(document) for document in self._documents])
         self._avg_length = (
@@ -149,7 +149,7 @@ class _BM25Index:
 
 
 # ----------------------------- Tools ------------------------
-def _init_kb():
+def _init_kb() -> None:
     """Загружает модель и кодирует документы при старте или первом использовании."""
     global _EMBEDDER, _KB_EMBEDDINGS, _KB_FILENAMES, _KB_ARTICLES, _KB_BM25
 

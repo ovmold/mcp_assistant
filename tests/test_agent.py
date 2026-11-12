@@ -24,7 +24,7 @@ from mcp_assistant.client import agent_prompts
 
 class MockConfirmation:
     """Заглушка ConfirmationProvider: записывает вызовы, возвращает заданный ответ."""
-    def __init__(self, approved: bool = True):
+    def __init__(self, approved: bool = True) -> None:
         self.approved = approved
         self.calls: list[tuple[str, dict]] = []
         self.calls_with_reason: list[tuple[str, dict, str]] = []
@@ -46,14 +46,14 @@ def mock_confirmation() -> MockConfirmation:
     return MockConfirmation(approved=True)
 
 @pytest.fixture
-def anyio_backend():
+def anyio_backend() -> str:
     """Указывает anyio использовать asyncio (а не trio)."""
     return "asyncio"
 
 
 class MockTracer:
     """Заглушка для трассировщика."""
-    def __init__(self):
+    def __init__(self) -> None:
         self.logs = []
 
     def log(self, event_type, **data) -> None:
@@ -62,7 +62,7 @@ class MockTracer:
 
 class MockMCPClient:
     """Заглушка для MCP-клиента."""
-    def __init__(self, tools: dict, call_tool_result=None, call_tool_error=None, is_error=False):
+    def __init__(self, tools: dict, call_tool_result=None, call_tool_error=None, is_error=False) -> None:
         self._tools = tools
         self._call_tool_result = call_tool_result or {"result": "ok"}
         self._call_tool_error = call_tool_error
@@ -91,13 +91,13 @@ class MockMCPClient:
 
 class MockLLMClient(GigaChatLLMClient):
     """Заглушка для LLM-клиента, возвращающая заранее заданные ответы."""
-    def __init__(self, responses: list):
+    def __init__(self, responses: list) -> None:
         self.responses = responses
         self.call_count = 0
         self.history: list[list[dict]] = []
         self.functions_history: list[list[dict] | None] = []
 
-    async def chat(self, messages, functions=None):
+    async def chat(self, messages, functions=None) -> ChatCompletionResponse:
         self.history.append([dict(m) for m in messages])
         self.functions_history.append(functions)
         if self.call_count >= len(self.responses):
@@ -222,7 +222,7 @@ def mock_system_prompt(monkeypatch) -> None:
 # ============================================================================
 
 
-def test_system_prompt_requires_explicit_comment_author():
+def test_system_prompt_requires_explicit_comment_author() -> None:
     prompt = agent_prompts.SYSTEM_PROMPT_TEMPLATE.casefold()
 
     assert "не вызывай add_comment" in prompt
@@ -231,7 +231,7 @@ def test_system_prompt_requires_explicit_comment_author():
 
 
 @pytest.mark.anyio
-async def test_normal_flow(mock_mcp_client, mock_tracer, mock_confirmation):
+async def test_normal_flow(mock_mcp_client, mock_tracer, mock_confirmation) -> None:
     """Один вызов инструмента, затем финальный ответ."""
     llm = MockLLMClient([
         MockLLMClient._make_function_call_response(
@@ -255,7 +255,7 @@ async def test_normal_flow(mock_mcp_client, mock_tracer, mock_confirmation):
 
 
 @pytest.mark.anyio
-async def test_step_limit(mock_mcp_client, mock_tracer, mock_confirmation):
+async def test_step_limit(mock_mcp_client, mock_tracer, mock_confirmation) -> None:
     """Модель бесконечно запрашивает инструменты, срабатывает лимит шагов."""
     response = MockLLMClient._make_function_call_response(
         "tickets__search_tickets", {"query": "test"}
@@ -278,7 +278,7 @@ async def test_step_limit(mock_mcp_client, mock_tracer, mock_confirmation):
 
 
 @pytest.mark.anyio
-async def test_invalid_json_retries_once(mock_mcp_client, mock_tracer, mock_confirmation):
+async def test_invalid_json_retries_once(mock_mcp_client, mock_tracer, mock_confirmation) -> None:
     """Невалидный JSON: агент ровно один раз сообщает модели об ошибке."""
     bad_call = MockLLMClient._make_raw_function_call_response(
         "tickets__search_tickets", '{"query": "test"'
@@ -319,7 +319,7 @@ async def test_invalid_json_retries_once(mock_mcp_client, mock_tracer, mock_conf
 @pytest.mark.anyio
 async def test_repeated_invalid_json_stops_after_one_retry(
     mock_mcp_client, mock_tracer, mock_confirmation
-):
+) -> None:
     bad_call = MockLLMClient._make_raw_function_call_response(
         "tickets__search_tickets", '{"query": "test"'
     )
@@ -342,7 +342,7 @@ async def test_repeated_invalid_json_stops_after_one_retry(
 
 
 @pytest.mark.anyio
-async def test_tool_execution_error(mock_tracer, mock_confirmation):
+async def test_tool_execution_error(mock_tracer, mock_confirmation) -> None:
     """Инструмент выбрасывает исключение."""
     mcp = MockMCPClient(
         tools={"tickets": [_make_tool(
@@ -372,7 +372,7 @@ async def test_tool_execution_error(mock_tracer, mock_confirmation):
 
 
 @pytest.mark.anyio
-async def test_mcp_error_flag_is_traced(mock_tracer, mock_confirmation):
+async def test_mcp_error_flag_is_traced(mock_tracer, mock_confirmation) -> None:
     mcp = MockMCPClient(
         tools={"tickets": [_make_tool(
             "search_tickets", "",
@@ -395,7 +395,7 @@ async def test_mcp_error_flag_is_traced(mock_tracer, mock_confirmation):
 
 
 @pytest.mark.anyio
-async def test_tool_timeout_error_has_no_hardcoded_duration(mock_tracer, mock_confirmation):
+async def test_tool_timeout_error_has_no_hardcoded_duration(mock_tracer, mock_confirmation) -> None:
     mcp = MockMCPClient(
         tools={"tickets": [_make_tool(
             "search_tickets", "",
@@ -422,7 +422,7 @@ async def test_tool_timeout_error_has_no_hardcoded_duration(mock_tracer, mock_co
 
 
 @pytest.mark.anyio
-async def test_readonly_tool_no_confirmation(mock_mcp_client, mock_tracer):
+async def test_readonly_tool_no_confirmation(mock_mcp_client, mock_tracer) -> None:
     """search_tickets (readOnlyHint=True) не должен требовать подтверждения."""
     llm = MockLLMClient([
         MockLLMClient._make_function_call_response(
@@ -447,7 +447,7 @@ async def test_readonly_tool_no_confirmation(mock_mcp_client, mock_tracer):
     )
 
 @pytest.mark.anyio
-async def test_destructive_tool_confirmation_from_annotations(mock_mcp_client, mock_tracer):
+async def test_destructive_tool_confirmation_from_annotations(mock_mcp_client, mock_tracer) -> None:
     """update_status (destructiveHint=True) требует подтверждения, даже если
     его нет в always_confirm_tools."""
     llm = MockLLMClient([
@@ -475,7 +475,7 @@ async def test_destructive_tool_confirmation_from_annotations(mock_mcp_client, m
     assert "destructive" in reason.lower()
 
 @pytest.mark.anyio
-async def test_unannotated_tool_failsafe_confirmation(mock_mcp_client, mock_tracer):
+async def test_unannotated_tool_failsafe_confirmation(mock_mcp_client, mock_tracer) -> None:
     """Инструмент без аннотаций должен требовать подтверждения (fail-safe)."""
     llm = MockLLMClient([
         MockLLMClient._make_function_call_response(
@@ -500,7 +500,7 @@ async def test_unannotated_tool_failsafe_confirmation(mock_mcp_client, mock_trac
     assert "no annotations" in reason or "fail-safe" in reason.lower()
 
 @pytest.mark.anyio
-async def test_config_always_confirm_overrides_readonly(mock_mcp_client, mock_tracer):
+async def test_config_always_confirm_overrides_readonly(mock_mcp_client, mock_tracer) -> None:
     """Если инструмент в always_confirm_tools — подтверждение нужно,
     даже если readOnlyHint=True (не доверяем серверу)."""
     llm = MockLLMClient([
@@ -526,7 +526,7 @@ async def test_config_always_confirm_overrides_readonly(mock_mcp_client, mock_tr
     assert "always_confirm" in reason
 
 @pytest.mark.anyio
-async def test_add_comment_confirmation_from_destructive_hint(mock_mcp_client, mock_tracer):
+async def test_add_comment_confirmation_from_destructive_hint(mock_mcp_client, mock_tracer) -> None:
     """add_comment помечен destructiveHint=True (комментарий не откатить)."""
     llm = MockLLMClient([
         MockLLMClient._make_function_call_response(
@@ -547,7 +547,7 @@ async def test_add_comment_confirmation_from_destructive_hint(mock_mcp_client, m
     assert "destructive" in reason.lower()
 
 @pytest.mark.anyio
-async def test_confirmation_requested_trace_contains_reason(mock_mcp_client, mock_tracer):
+async def test_confirmation_requested_trace_contains_reason(mock_mcp_client, mock_tracer) -> None:
     """При запросе подтверждения в трассу попадает reason."""
     llm = MockLLMClient([
         MockLLMClient._make_function_call_response(
@@ -571,7 +571,7 @@ async def test_confirmation_requested_trace_contains_reason(mock_mcp_client, moc
     assert "destructive" in data["reason"].lower()
 
 @pytest.mark.anyio
-async def test_denied_confirmation_does_not_call_tool(mock_tracer):
+async def test_denied_confirmation_does_not_call_tool(mock_tracer) -> None:
     """Если пользователь отказал — call_tool не должен вызываться."""
     mcp = MockMCPClient(
         tools={
@@ -587,7 +587,7 @@ async def test_denied_confirmation_does_not_call_tool(mock_tracer):
     )
     called = []
     original_call = mcp.call_tool
-    async def spy(server, tool, args):
+    async def spy(server, tool, args) -> SimpleNamespace:
         called.append((server, tool, args))
         return await original_call(server, tool, args)
     mcp.call_tool = spy
@@ -611,7 +611,7 @@ async def test_denied_confirmation_does_not_call_tool(mock_tracer):
     assert called == [], "инструмент не должен вызываться при отказе"
 
 @pytest.mark.anyio
-async def test_unknown_tool_does_not_ask_confirmation(mock_mcp_client, mock_tracer):
+async def test_unknown_tool_does_not_ask_confirmation(mock_mcp_client, mock_tracer) -> None:
     """Неизвестный инструмент не должен доходить до подтверждения."""
     llm = MockLLMClient([
         MockLLMClient._make_function_call_response("unknown__tool", {}),
@@ -629,7 +629,7 @@ async def test_unknown_tool_does_not_ask_confirmation(mock_mcp_client, mock_trac
     assert confirmation.calls_with_reason == []
 
 @pytest.mark.anyio
-async def test_write_tool_confirmation_denied(mock_tracer):
+async def test_write_tool_confirmation_denied(mock_tracer) -> None:
     """Подтверждение отклонено, инструмент НЕ выполняется."""
     mcp = MockMCPClient(
         tools={"tickets": [_make_tool(
@@ -643,7 +643,7 @@ async def test_write_tool_confirmation_denied(mock_tracer):
     # Spy: фиксируем фактические вызовы call_tool
     called: list[tuple[str, str, dict]] = []
     original_call = mcp.call_tool
-    async def spy(server, tool, args):
+    async def spy(server, tool, args) -> SimpleNamespace:
         called.append((server, tool, args))
         return await original_call(server, tool, args)
     mcp.call_tool = spy
@@ -678,7 +678,7 @@ async def test_write_tool_confirmation_denied(mock_tracer):
     assert "tool_call" not in events
 
 @pytest.mark.anyio
-async def test_write_tool_confirmation_approved(mock_tracer):
+async def test_write_tool_confirmation_approved(mock_tracer) -> None:
     """Подтверждение получено, инструмент выполняется, результат доходит до LLM."""
     mcp = MockMCPClient(
         tools={"tickets": [_make_tool(
@@ -691,7 +691,7 @@ async def test_write_tool_confirmation_approved(mock_tracer):
 
     called: list[tuple[str, str, dict]] = []
     original_call = mcp.call_tool
-    async def spy(server, tool, args):
+    async def spy(server, tool, args) -> SimpleNamespace:
         called.append((server, tool, args))
         return await original_call(server, tool, args)
     mcp.call_tool = spy
@@ -733,7 +733,7 @@ async def test_write_tool_confirmation_approved(mock_tracer):
     "answer,expected",
     [("да", True), ("нет", False), ("y", True), ("  ДА  ", True), ("nonsense", False)],
 )
-async def test_cli_confirmation_with_reason(answer, expected):
+async def test_cli_confirmation_with_reason(answer, expected) -> None:
     """confirm_with_reason возвращает ожидаемое значение."""
     with patch("builtins.input", return_value=answer):
         result = await CLIConfirmation().confirm_with_reason(
@@ -743,7 +743,7 @@ async def test_cli_confirmation_with_reason(answer, expected):
 
 
 @pytest.mark.anyio
-async def test_cli_confirmation_shows_reason_in_prompt():
+async def test_cli_confirmation_shows_reason_in_prompt() -> None:
     """Причина запроса отображается пользователю в тексте prompt."""
     captured: list[str] = []
 
@@ -763,7 +763,7 @@ async def test_cli_confirmation_shows_reason_in_prompt():
 
 
 @pytest.mark.anyio
-async def test_agent_remembers_previous_turn(mock_mcp_client, mock_tracer, mock_confirmation):
+async def test_agent_remembers_previous_turn(mock_mcp_client, mock_tracer, mock_confirmation) -> None:
     """Второй run() видит историю первого."""
     llm = MockLLMClient([
         MockLLMClient._make_final_response("Какой тикет?"),
@@ -787,7 +787,7 @@ async def test_agent_remembers_previous_turn(mock_mcp_client, mock_tracer, mock_
 
 
 @pytest.mark.anyio
-async def test_sessions_isolated(mock_mcp_client, mock_tracer, mock_confirmation):
+async def test_sessions_isolated(mock_mcp_client, mock_tracer, mock_confirmation) -> None:
     """Разные session_id не видят историю друг друга."""
     llm = MockLLMClient([
         MockLLMClient._make_final_response("a"),
@@ -807,7 +807,7 @@ async def test_sessions_isolated(mock_mcp_client, mock_tracer, mock_confirmation
 
 
 @pytest.mark.anyio
-async def test_reset_clears_history(mock_mcp_client, mock_tracer, mock_confirmation):
+async def test_reset_clears_history(mock_mcp_client, mock_tracer, mock_confirmation) -> None:
     """reset() удаляет историю — следующий run() стартует с чистого листа."""
     llm = MockLLMClient([
         MockLLMClient._make_final_response("a"),
@@ -827,7 +827,7 @@ async def test_reset_clears_history(mock_mcp_client, mock_tracer, mock_confirmat
 
 
 @pytest.mark.anyio
-async def test_reset_only_affects_given_session(mock_mcp_client, mock_tracer, mock_confirmation):
+async def test_reset_only_affects_given_session(mock_mcp_client, mock_tracer, mock_confirmation) -> None:
     """reset("a") не должен затрагивать сессию "b"."""
     llm = MockLLMClient([
         MockLLMClient._make_final_response("ok"),
@@ -849,7 +849,7 @@ async def test_reset_only_affects_given_session(mock_mcp_client, mock_tracer, mo
 
 
 @pytest.mark.anyio
-async def test_get_history_returns_defensive_copy(mock_mcp_client, mock_tracer, mock_confirmation):
+async def test_get_history_returns_defensive_copy(mock_mcp_client, mock_tracer, mock_confirmation) -> None:
     """Мутация результата get_history() не меняет внутреннее состояние."""
     llm = MockLLMClient([MockLLMClient._make_final_response("ok")])
     agent = Agent(
@@ -865,7 +865,7 @@ async def test_get_history_returns_defensive_copy(mock_mcp_client, mock_tracer, 
 
 
 @pytest.mark.anyio
-async def test_run_appends_final_answer_to_history(mock_mcp_client, mock_tracer, mock_confirmation):
+async def test_run_appends_final_answer_to_history(mock_mcp_client, mock_tracer, mock_confirmation) -> None:
     llm = MockLLMClient([MockLLMClient._make_final_response("ответ")])
     agent = Agent(
         mcp_client=mock_mcp_client, llm=llm, tracer=mock_tracer,
@@ -878,9 +878,9 @@ async def test_run_appends_final_answer_to_history(mock_mcp_client, mock_tracer,
 
 
 @pytest.mark.anyio
-async def test_run_appends_error_to_history(mock_mcp_client, mock_tracer, mock_confirmation):
+async def test_run_appends_error_to_history(mock_mcp_client, mock_tracer, mock_confirmation) -> None:
     class FailingLLM(GigaChatLLMClient):
-        async def chat(self, messages, functions=None):
+        async def chat(self, messages, functions=None) -> ChatCompletionResponse:
             raise RuntimeError("network down")
 
     agent = Agent(
@@ -897,7 +897,7 @@ async def test_run_appends_error_to_history(mock_mcp_client, mock_tracer, mock_c
 
 
 @pytest.mark.anyio
-async def test_run_appends_max_steps_message_to_history(mock_mcp_client, mock_tracer, mock_confirmation):
+async def test_run_appends_max_steps_message_to_history(mock_mcp_client, mock_tracer, mock_confirmation) -> None:
     response = MockLLMClient._make_function_call_response(
         "tickets__search_tickets", {"query": "x"}
     )
@@ -913,7 +913,7 @@ async def test_run_appends_max_steps_message_to_history(mock_mcp_client, mock_tr
 
 
 @pytest.mark.anyio
-async def test_history_trimmed_removes_oldest_turns(mock_mcp_client, mock_tracer, mock_confirmation):
+async def test_history_trimmed_removes_oldest_turns(mock_mcp_client, mock_tracer, mock_confirmation) -> None:
     """Старые ходы вытесняются, свежие остаются, system — всегда первый."""
     llm = MockLLMClient([])   # дефолтный "Конец теста" на каждый вызов
     agent = Agent(
@@ -934,7 +934,7 @@ async def test_history_trimmed_removes_oldest_turns(mock_mcp_client, mock_tracer
 
 
 @pytest.mark.anyio
-async def test_history_not_trimmed_below_limit(mock_mcp_client, mock_tracer, mock_confirmation):
+async def test_history_not_trimmed_below_limit(mock_mcp_client, mock_tracer, mock_confirmation) -> None:
     llm = MockLLMClient([])
     agent = Agent(
         mcp_client=mock_mcp_client, llm=llm, tracer=mock_tracer,
@@ -949,7 +949,7 @@ async def test_history_not_trimmed_below_limit(mock_mcp_client, mock_tracer, moc
 
 
 @pytest.mark.anyio
-async def test_default_session_id(mock_mcp_client, mock_tracer, mock_confirmation):
+async def test_default_session_id(mock_mcp_client, mock_tracer, mock_confirmation) -> None:
     llm = MockLLMClient([
         MockLLMClient._make_final_response("a"),
         MockLLMClient._make_final_response("b"),
@@ -967,7 +967,7 @@ async def test_default_session_id(mock_mcp_client, mock_tracer, mock_confirmatio
     assert users == ["hi", "again"]
 
 @pytest.mark.anyio
-async def test_tool_result_respects_char_limit(mock_tracer, mock_confirmation):
+async def test_tool_result_respects_char_limit(mock_tracer, mock_confirmation) -> None:
     mcp = MockMCPClient(
         tools={"tickets": [_make_tool(
             "search_tickets", "",
@@ -996,7 +996,7 @@ async def test_tool_result_respects_char_limit(mock_tracer, mock_confirmation):
 
 
 @pytest.mark.anyio
-async def test_history_trimmed_by_char_limit(mock_mcp_client, mock_tracer, mock_confirmation):
+async def test_history_trimmed_by_char_limit(mock_mcp_client, mock_tracer, mock_confirmation) -> None:
     agent = Agent(
         mcp_client=mock_mcp_client,
         llm=MockLLMClient([]),
@@ -1020,7 +1020,7 @@ async def test_history_trimmed_by_char_limit(mock_mcp_client, mock_tracer, mock_
 @pytest.mark.anyio
 async def test_history_trim_preserves_function_call_pairs(
     mock_mcp_client, mock_tracer, mock_confirmation
-):
+) -> None:
     responses = []
     for i in range(3):
         responses.extend([
@@ -1058,7 +1058,7 @@ async def test_history_trim_preserves_function_call_pairs(
 
 
 class TrackingMCPClient(MockMCPClient):
-    def __init__(self, tools, synchronize=False):
+    def __init__(self, tools, synchronize=False) -> None:
         super().__init__(tools)
         self.synchronize = synchronize
         self.active = 0
@@ -1067,7 +1067,7 @@ class TrackingMCPClient(MockMCPClient):
         self.both_started = asyncio.Event()
         self.calls = []
 
-    async def call_tool(self, server_name, tool_name, arguments):
+    async def call_tool(self, server_name, tool_name, arguments) -> SimpleNamespace:
         self.calls.append((server_name, tool_name, arguments))
         self.active += 1
         self.max_active = max(self.max_active, self.active)
@@ -1085,7 +1085,7 @@ class TrackingMCPClient(MockMCPClient):
 
 
 @pytest.mark.anyio
-async def test_parallel_readonly_calls_execute_concurrently(mock_tools, mock_tracer, mock_confirmation):
+async def test_parallel_readonly_calls_execute_concurrently(mock_tools, mock_tracer, mock_confirmation) -> None:
     mcp = TrackingMCPClient(mock_tools, synchronize=True)
     llm = MockLLMClient([
         MockLLMClient._make_parallel_function_call_response([
@@ -1108,7 +1108,7 @@ async def test_parallel_readonly_calls_execute_concurrently(mock_tools, mock_tra
 
 
 @pytest.mark.anyio
-async def test_parallel_write_calls_remain_sequential(mock_tools, mock_tracer, mock_confirmation):
+async def test_parallel_write_calls_remain_sequential(mock_tools, mock_tracer, mock_confirmation) -> None:
     mcp = TrackingMCPClient(mock_tools)
     llm = MockLLMClient([
         MockLLMClient._make_parallel_function_call_response([
@@ -1127,11 +1127,11 @@ async def test_parallel_write_calls_remain_sequential(mock_tools, mock_tracer, m
 
 
 @pytest.mark.anyio
-async def test_llm_client_enables_parallel_tool_calls():
+async def test_llm_client_enables_parallel_tool_calls() -> None:
     class FakeChatResource:
         request = None
 
-        def create(self, request):
+        def create(self, request) -> ChatCompletionResponse:
             self.request = request
             return ChatCompletionResponse(messages=[])
 
@@ -1148,7 +1148,7 @@ async def test_llm_client_enables_parallel_tool_calls():
 
 
 @pytest.mark.anyio
-async def test_denial_stops_remaining_batch(mock_tools, mock_tracer):
+async def test_denial_stops_remaining_batch(mock_tools, mock_tracer) -> None:
     mcp = TrackingMCPClient(mock_tools)
     confirmation = MockConfirmation(approved=False)
     llm = MockLLMClient([
@@ -1174,7 +1174,7 @@ async def test_denial_stops_remaining_batch(mock_tools, mock_tracer):
 @pytest.mark.anyio
 async def test_step_limit_returns_partial_answer_without_tools(
     mock_mcp_client, mock_tracer, mock_confirmation
-):
+) -> None:
     llm = MockLLMClient([
         MockLLMClient._make_function_call_response(
             "tickets__search_tickets", {"query": "502"}
@@ -1199,9 +1199,9 @@ async def test_step_limit_returns_partial_answer_without_tools(
 @pytest.mark.anyio
 async def test_finalization_error_returns_limit_message(
     mock_mcp_client, mock_tracer, mock_confirmation
-):
+) -> None:
     class FailingFinalLLM(MockLLMClient):
-        async def chat(self, messages, functions=None):
+        async def chat(self, messages, functions=None) -> ChatCompletionResponse:
             if functions is None:
                 raise RuntimeError("finalization failed")
             return await super().chat(messages, functions)
@@ -1224,7 +1224,7 @@ async def test_finalization_error_returns_limit_message(
     )
 
 
-def test_wrap_tool_result_escapes_embedded_markup():
+def test_wrap_tool_result_escapes_embedded_markup() -> None:
     wrapped = wrap_tool_result(
         "tickets",
         "get_ticket",
@@ -1237,7 +1237,7 @@ def test_wrap_tool_result_escapes_embedded_markup():
 
 
 class CapabilityMCPClient(MockMCPClient):
-    def __init__(self, tools):
+    def __init__(self, tools) -> None:
         super().__init__(tools)
         self.resources = {"tickets": [SimpleNamespace(uri="tickets://stats")]}
         self.templates = {
@@ -1251,22 +1251,22 @@ class CapabilityMCPClient(MockMCPClient):
         self.read_calls = []
         self.prompt_calls = []
 
-    def get_all_resources(self):
+    def get_all_resources(self) -> dict:
         return self.resources
 
-    def get_all_resource_templates(self):
+    def get_all_resource_templates(self) -> dict:
         return self.templates
 
-    def get_all_prompts(self):
+    def get_all_prompts(self) -> dict:
         return self.prompts
 
-    async def read_resource(self, server_name, uri):
+    async def read_resource(self, server_name, uri) -> SimpleNamespace:
         self.read_calls.append((server_name, uri))
         return SimpleNamespace(
             contents=[SimpleNamespace(text=f"Содержимое ресурса {uri}")]
         )
 
-    async def get_prompt(self, server_name, prompt_name, arguments):
+    async def get_prompt(self, server_name, prompt_name, arguments) -> SimpleNamespace:
         self.prompt_calls.append((server_name, prompt_name, arguments))
         ticket_id = arguments["ticket_id"]
         return SimpleNamespace(messages=[
@@ -1284,7 +1284,7 @@ class CapabilityMCPClient(MockMCPClient):
 
 
 @pytest.mark.anyio
-async def test_agent_reads_mcp_resource(mock_tools, mock_tracer, mock_confirmation):
+async def test_agent_reads_mcp_resource(mock_tools, mock_tracer, mock_confirmation) -> None:
     mcp = CapabilityMCPClient(mock_tools)
     llm = MockLLMClient([
         MockLLMClient._make_function_call_response(
@@ -1306,7 +1306,7 @@ async def test_agent_reads_mcp_resource(mock_tools, mock_tracer, mock_confirmati
 @pytest.mark.anyio
 async def test_agent_applies_prompt_then_reads_resource(
     mock_tools, mock_tracer, mock_confirmation
-):
+) -> None:
     mcp = CapabilityMCPClient(mock_tools)
     llm = MockLLMClient([
         MockLLMClient._make_function_call_response(

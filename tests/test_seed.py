@@ -5,7 +5,7 @@ from mcp_assistant import config as conf
 from mcp_assistant import seed
 
 
-def test_seed_recreates_database_and_kb(tmp_path, monkeypatch):
+def test_seed_recreates_database_and_kb(tmp_path, monkeypatch) -> None:
     data_dir = tmp_path / "data"
     kb_dir = data_dir / "kb"
     kb_dir.mkdir(parents=True)

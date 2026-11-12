@@ -31,7 +31,7 @@ def _format_exception(error: Exception) -> str:
 
 
 class MCPClient:
-    def __init__(self, config: dict):
+    def __init__(self, config: dict) -> None:
         self._servers = {s["name"]: s for s in config["servers"]}
         self._clients: dict[str, Client] = {}
         self._tools: dict[str, list[Tool]] = {}

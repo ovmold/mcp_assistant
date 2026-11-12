@@ -9,7 +9,7 @@ from evals.scenario_eval import apply_setup, run_scenario, validate_scenarios
 from mcp_assistant import config as conf
 
 
-def test_init_eval_db_creates_parent_directory(tmp_path, monkeypatch):
+def test_init_eval_db_creates_parent_directory(tmp_path, monkeypatch) -> None:
     db_path = tmp_path / "nested" / "evals.db"
     monkeypatch.setattr(conf, "DB_PATH", db_path)
 
@@ -20,7 +20,7 @@ def test_init_eval_db_creates_parent_directory(tmp_path, monkeypatch):
     assert count == 10
 
 
-def test_all_scenarios_use_valid_new_format():
+def test_all_scenarios_use_valid_new_format() -> None:
     path = Path(__file__).resolve().parent.parent / "evals" / "scenarios.yaml"
     scenarios = yaml.safe_load(path.read_text(encoding="utf-8"))
 
@@ -30,7 +30,7 @@ def test_all_scenarios_use_valid_new_format():
     assert len({scenario["id"] for scenario in scenarios}) == len(scenarios)
 
 
-def test_scenario_id_cannot_contain_spaces():
+def test_scenario_id_cannot_contain_spaces() -> None:
     with pytest.raises(ValueError, match="пробелы"):
         validate_scenarios([{
             "id": "invalid id",
@@ -41,18 +41,18 @@ def test_scenario_id_cannot_contain_spaces():
 
 
 @pytest.mark.anyio
-async def test_multi_turn_scenario_checks_calls_and_db(tmp_path, monkeypatch):
+async def test_multi_turn_scenario_checks_calls_and_db(tmp_path, monkeypatch) -> None:
     db_path = tmp_path / "evals.db"
     monkeypatch.setattr(conf, "DB_PATH", db_path)
     init_eval_db()
 
     class FakeAgent:
-        def __init__(self):
+        def __init__(self) -> None:
             self.tracer = None
             self.confirmation = None
             self.turns = []
 
-        async def run(self, user_input):
+        async def run(self, user_input) -> str:
             self.turns.append(user_input)
             if len(self.turns) == 1:
                 return "От чьего имени добавить комментарий?"
@@ -115,7 +115,7 @@ async def test_multi_turn_scenario_checks_calls_and_db(tmp_path, monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_scenario_releases_db_for_next_run(tmp_path, monkeypatch):
+async def test_scenario_releases_db_for_next_run(tmp_path, monkeypatch) -> None:
     db_path = tmp_path / "evals.db"
     monkeypatch.setattr(conf, "DB_PATH", db_path)
 
@@ -123,7 +123,7 @@ async def test_scenario_releases_db_for_next_run(tmp_path, monkeypatch):
         tracer = None
         confirmation = None
 
-        async def run(self, user_input):
+        async def run(self, user_input) -> str:
             return "Готово"
 
     scenario = {
@@ -142,7 +142,7 @@ async def test_scenario_releases_db_for_next_run(tmp_path, monkeypatch):
         assert result["success"], result["reasons"]
 
 
-def test_configure_eval_tickets_server_passes_only_eval_paths(tmp_path, monkeypatch):
+def test_configure_eval_tickets_server_passes_only_eval_paths(tmp_path, monkeypatch) -> None:
     data_dir = tmp_path / "eval_data"
     db_path = data_dir / "tickets.db"
     monkeypatch.setattr(conf, "DATA_DIR", data_dir)
@@ -183,7 +183,7 @@ def test_configure_eval_tickets_server_passes_only_eval_paths(tmp_path, monkeypa
 @pytest.mark.anyio
 async def test_parallel_ticket_and_kb_accepts_both_read_methods(
     tmp_path, monkeypatch, ticket_tool, ticket_args
-):
+) -> None:
     monkeypatch.setattr(conf, "DB_PATH", tmp_path / "evals.db")
     init_eval_db()
 
@@ -191,7 +191,7 @@ async def test_parallel_ticket_and_kb_accepts_both_read_methods(
         tracer = None
         confirmation = None
 
-        async def run(self, user_input):
+        async def run(self, user_input) -> str:
             calls = [
                 (ticket_tool, ticket_args, "tickets"),
                 ("search_kb", {"query": "502"}, "knowledge"),

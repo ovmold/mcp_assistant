@@ -38,7 +38,7 @@ def _converter_with(tool: SimpleNamespace, server: str = "tickets") -> ToolConve
 # add_server_tools
 # ============================================================================
 
-def test_add_single_tool():
+def test_add_single_tool() -> None:
     """Один инструмент корректно преобразуется в формат GigaChat."""
     converter = ToolConverter()
     converter.add_server_tools("tickets", [
@@ -52,7 +52,7 @@ def test_add_single_tool():
     assert func["parameters"] == {"type": "object"}
 
 
-def test_add_multiple_tools():
+def test_add_multiple_tools() -> None:
     """Несколько инструментов с одного сервера."""
     converter = ToolConverter()
     converter.add_server_tools("tickets", [
@@ -65,7 +65,7 @@ def test_add_multiple_tools():
     assert names == ["tickets__search", "tickets__update_status"]
 
 
-def test_add_tools_from_multiple_servers():
+def test_add_tools_from_multiple_servers() -> None:
     """Инструменты с разных серверов получают разные префиксы."""
     converter = ToolConverter()
     converter.add_server_tools("tickets", [make_tool("search")])
@@ -75,20 +75,20 @@ def test_add_tools_from_multiple_servers():
     assert names == ["tickets__search", "kb__search"]
 
 
-def test_missing_description_becomes_empty_string():
+def test_missing_description_becomes_empty_string() -> None:
     """Если description=None, подставляется пустая строка."""
     converter = _converter_with(make_tool("t", description=None), server="srv")
     assert converter.gigachat_tools[0]["description"] == ""
 
 
-def test_missing_schema_gets_default():
+def test_missing_schema_gets_default() -> None:
     """Если input_schema=None, подставляется пустая схема."""
     converter = _converter_with(make_tool("t", schema=None), server="srv")
     params = converter.gigachat_tools[0]["parameters"]
     assert params == {"type": "object", "properties": {}}
 
 
-def test_empty_tools_list():
+def test_empty_tools_list() -> None:
     """Пустой список инструментов не ломает конвертер."""
     converter = ToolConverter()
     converter.add_server_tools("srv", [])
@@ -101,7 +101,7 @@ def test_empty_tools_list():
 # get_gigachat_functions
 # ============================================================================
 
-def test_get_gigachat_functions_returns_all_tools():
+def test_get_gigachat_functions_returns_all_tools() -> None:
     """get_gigachat_functions() возвращает все добавленные инструменты."""
     converter = _converter_with(make_tool("search"))
 
@@ -110,7 +110,7 @@ def test_get_gigachat_functions_returns_all_tools():
     assert functions[0]["name"] == "tickets__search"
 
 
-def test_get_gigachat_functions_empty():
+def test_get_gigachat_functions_empty() -> None:
     """Для пустого конвертера возвращает пустой список."""
     converter = ToolConverter()
     assert converter.get_gigachat_functions() == []
@@ -120,14 +120,14 @@ def test_get_gigachat_functions_empty():
 # resolve
 # ============================================================================
 
-def test_resolve_returns_pair():
+def test_resolve_returns_pair() -> None:
     """resolve() возвращает (server_name, original_tool_name)."""
     converter = _converter_with(make_tool("search"))
 
     assert converter.resolve("tickets__search") == ("tickets", "search")
 
 
-def test_resolve_unknown_returns_none():
+def test_resolve_unknown_returns_none() -> None:
     """resolve() для неизвестного имени возвращает None."""
     converter = _converter_with(make_tool("search"))
 
@@ -140,7 +140,7 @@ def test_resolve_unknown_returns_none():
 # _raw: хранение исходного Tool
 # ============================================================================
 
-def test_raw_stores_original_tool_object():
+def test_raw_stores_original_tool_object() -> None:
     """_raw хранит исходный Tool, а не урезанную копию."""
     ann = ToolAnnotations(readOnlyHint=False, destructiveHint=True)
     tool = make_tool("update", annotations=ann)
@@ -158,7 +158,7 @@ def test_raw_stores_original_tool_object():
 # requires_confirmation
 # ============================================================================
 
-def test_requires_confirmation_unknown_tool_failsafe():
+def test_requires_confirmation_unknown_tool_failsafe() -> None:
     """Неизвестный инструмент → подтверждение (fail-safe)."""
     converter = ToolConverter()
     needs, reason = converter.requires_confirmation("nope__nope")
@@ -167,7 +167,7 @@ def test_requires_confirmation_unknown_tool_failsafe():
     assert reason == "tool not found (fail-safe)"
 
 
-def test_requires_confirmation_no_annotations_failsafe():
+def test_requires_confirmation_no_annotations_failsafe() -> None:
     """Инструмент без аннотаций → подтверждение (fail-safe)."""
     converter = _converter_with(make_tool("bare", annotations=None))
 
@@ -176,7 +176,7 @@ def test_requires_confirmation_no_annotations_failsafe():
     assert reason == "no annotations (fail-safe)"
 
 
-def test_requires_confirmation_readonly_returns_false():
+def test_requires_confirmation_readonly_returns_false() -> None:
     """readOnlyHint=True → подтверждение НЕ нужно."""
     converter = _converter_with(make_tool(
         "read",
@@ -188,7 +188,7 @@ def test_requires_confirmation_readonly_returns_false():
     assert reason == "readOnlyHint=True"
 
 
-def test_requires_confirmation_destructive_returns_true():
+def test_requires_confirmation_destructive_returns_true() -> None:
     """
     Главный тест: destructiveHint=True читается из аннотаций.
 
@@ -210,7 +210,7 @@ def test_requires_confirmation_destructive_returns_true():
     )
 
 
-def test_requires_confirmation_additive_write_returns_true():
+def test_requires_confirmation_additive_write_returns_true() -> None:
     """readOnlyHint=False и destructiveHint=False → подтверждение нужно."""
     converter = _converter_with(make_tool(
         "add",
@@ -222,7 +222,7 @@ def test_requires_confirmation_additive_write_returns_true():
     assert reason == "write tool (readOnlyHint is not True)"
 
 
-def test_requires_confirmation_only_readonly_default():
+def test_requires_confirmation_only_readonly_default() -> None:
     """
     Только readOnlyHint=False без destructiveHint (None по умолчанию)
     → трактуется как write tool.
@@ -241,7 +241,7 @@ def test_requires_confirmation_only_readonly_default():
 # Интеграционные сценарии
 # ============================================================================
 
-def test_full_workflow():
+def test_full_workflow() -> None:
     """Полный сценарий: добавить → получить список → resolve."""
     converter = ToolConverter()
     converter.add_server_tools("tickets", [
@@ -261,7 +261,7 @@ def test_full_workflow():
         assert tool in ("search", "update_status", "get_article")
 
 
-def test_mapping_and_tools_consistent():
+def test_mapping_and_tools_consistent() -> None:
     """Каждый инструмент в gigachat_tools имеет запись в mapping."""
     converter = ToolConverter()
     converter.add_server_tools("tickets", [

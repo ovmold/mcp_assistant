@@ -1,5 +1,7 @@
 import asyncio
+from collections.abc import Callable, Iterator
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -9,13 +11,13 @@ from mcp_assistant.client.ui.gradio import build_gradio_ui
 
 
 @pytest.fixture(autouse=True)
-def clean_gradio_sessions():
+def clean_gradio_sessions() -> Iterator[None]:
     gradio_ui._sessions.clear()
     yield
     gradio_ui._sessions.clear()
 
 
-def get_handler(demo, name):
+def get_handler(demo, name) -> Callable[..., Any]:
     return next(
         block_function.fn
         for block_function in demo.fns.values()
@@ -24,13 +26,13 @@ def get_handler(demo, name):
 
 
 class CancellableAgent:
-    def __init__(self):
+    def __init__(self) -> None:
         self.calls = []
         self.started = asyncio.Event()
         self.release = asyncio.Event()
         self.finished = asyncio.Event()
 
-    async def run(self, message, confirmation=None, session_id="default"):
+    async def run(self, message, confirmation=None, session_id="default") -> str:
         self.calls.append(message)
         if len(self.calls) == 1:
             self.started.set()
@@ -41,20 +43,20 @@ class CancellableAgent:
 
 
 class ResettableAgent:
-    def __init__(self):
+    def __init__(self) -> None:
         self.reset_calls = []
         self.calls = []
 
-    async def run(self, message, confirmation=None, session_id="default"):
+    async def run(self, message, confirmation=None, session_id="default") -> str:
         self.calls.append(message)
         return "Ответ"
 
-    def reset(self, session_id="default"):
+    def reset(self, session_id="default") -> None:
         self.reset_calls.append(session_id)
 
 
 @pytest.mark.anyio
-async def test_cancelled_request_does_not_block_next_message():
+async def test_cancelled_request_does_not_block_next_message() -> None:
     agent = CancellableAgent()
     demo = build_gradio_ui(agent)
     respond = get_handler(demo, "respond")
@@ -78,7 +80,7 @@ async def test_cancelled_request_does_not_block_next_message():
     assert history[-1] == {"role": "assistant", "content": "Второй ответ"}
 
 
-def test_clear_chat_removes_session_state():
+def test_clear_chat_removes_session_state() -> None:
     agent = ResettableAgent()
     demo = build_gradio_ui(agent)
     clear_chat = get_handler(demo, "clear_chat")
@@ -96,7 +98,7 @@ def test_clear_chat_removes_session_state():
 
 
 @pytest.mark.anyio
-async def test_expired_session_is_reset_before_new_request():
+async def test_expired_session_is_reset_before_new_request() -> None:
     agent = ResettableAgent()
     demo = build_gradio_ui(agent, session_timeout=10.0)
     respond = get_handler(demo, "respond")

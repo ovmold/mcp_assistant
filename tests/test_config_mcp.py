@@ -22,7 +22,7 @@ def write_config(tmp_path: Path, data: dict) -> Path:
 
 
 @pytest.fixture(autouse=True)
-def patch_project_dir(tmp_path, monkeypatch):
+def patch_project_dir(tmp_path, monkeypatch) -> Path:
     """Подменяет conf.PROJECT_DIR на временную папку."""
     project_dir = tmp_path / "project"
     project_dir.mkdir()
@@ -34,7 +34,7 @@ def patch_project_dir(tmp_path, monkeypatch):
 # Успешная загрузка и дефолты
 # ============================================================================
 
-def test_load_minimal_config(tmp_path):
+def test_load_minimal_config(tmp_path) -> None:
     """Минимальный конфиг с одним stdio-сервером."""
     path = write_config(tmp_path, {
         "servers": [{
@@ -49,7 +49,7 @@ def test_load_minimal_config(tmp_path):
     assert config["servers"][0]["name"] == "tickets"
 
 
-def test_defaults_are_set(tmp_path):
+def test_defaults_are_set(tmp_path) -> None:
     """Все дефолты проставляются, если их нет в JSON."""
     path = write_config(tmp_path, {
         "servers": [{
@@ -75,7 +75,7 @@ def test_defaults_are_set(tmp_path):
     assert server["always_confirm_by_server"] == []
 
 
-def test_existing_values_not_overwritten(tmp_path):
+def test_existing_values_not_overwritten(tmp_path) -> None:
     """Если значения заданы в JSON, дефолты их не перезаписывают."""
     path = write_config(tmp_path, {
         "model": "GigaChat-2-Max",
@@ -101,7 +101,7 @@ def test_existing_values_not_overwritten(tmp_path):
 # -m-режим: добавление PYTHONPATH
 # ============================================================================
 
-def test_m_mode_adds_pythonpath(tmp_path, patch_project_dir):
+def test_m_mode_adds_pythonpath(tmp_path, patch_project_dir) -> None:
     """В -m-режиме добавляется PYTHONPATH с PROJECT_DIR."""
     path = write_config(tmp_path, {
         "servers": [{
@@ -121,7 +121,7 @@ def test_m_mode_adds_pythonpath(tmp_path, patch_project_dir):
     assert str(patch_project_dir) in env["PYTHONPATH"]
 
 
-def test_m_mode_preserves_existing_pythonpath(tmp_path, patch_project_dir):
+def test_m_mode_preserves_existing_pythonpath(tmp_path, patch_project_dir) -> None:
     """В -m-режиме существующий PYTHONPATH дополняется, а не затирается."""
     path = write_config(tmp_path, {
         "servers": [{
@@ -143,7 +143,7 @@ def test_m_mode_preserves_existing_pythonpath(tmp_path, patch_project_dir):
     assert pythonpath == expected
 
 
-def test_m_mode_does_not_modify_args(tmp_path):
+def test_m_mode_does_not_modify_args(tmp_path) -> None:
     """В -m-режиме args не преобразуются в пути."""
     path = write_config(tmp_path, {
         "servers": [{
@@ -166,7 +166,7 @@ def test_m_mode_does_not_modify_args(tmp_path):
 # Обычный режим: разрешение путей в args
 # ============================================================================
 
-def test_relative_args_resolved(tmp_path, patch_project_dir):
+def test_relative_args_resolved(tmp_path, patch_project_dir) -> None:
     """Относительные пути в args разрешаются относительно PROJECT_DIR."""
     (patch_project_dir / "server.py").touch()
     path = write_config(tmp_path, {
@@ -187,7 +187,7 @@ def test_relative_args_resolved(tmp_path, patch_project_dir):
     assert args[0] == expected
 
 
-def test_absolute_args_not_changed(tmp_path):
+def test_absolute_args_not_changed(tmp_path) -> None:
     """Абсолютные пути в args остаются как есть."""
     abs_path = str(tmp_path / "absolute_server.py")
     path = write_config(tmp_path, {
@@ -205,7 +205,7 @@ def test_absolute_args_not_changed(tmp_path):
     assert config["servers"][0]["transport"]["args"][0] == abs_path
 
 
-def test_flags_and_numbers_not_touched(tmp_path):
+def test_flags_and_numbers_not_touched(tmp_path) -> None:
     """Флаги (--port) и числа (8000) не преобразуются в пути."""
     path = write_config(tmp_path, {
         "servers": [{
@@ -223,7 +223,7 @@ def test_flags_and_numbers_not_touched(tmp_path):
     assert args == ["--port", "8000"]
 
 
-def test_url_in_args_not_touched(tmp_path):
+def test_url_in_args_not_touched(tmp_path) -> None:
     """URL в args не преобразуется в путь (нет ошибки resolve)."""
     url = "http://example.com/server.py"
     path = write_config(tmp_path, {
@@ -245,7 +245,7 @@ def test_url_in_args_not_touched(tmp_path):
 # streamable-http
 # ============================================================================
 
-def test_streamable_http_server(tmp_path):
+def test_streamable_http_server(tmp_path) -> None:
     """Streamable-http сервер с url загружается корректно."""
     path = write_config(tmp_path, {
         "servers": [{
@@ -262,13 +262,13 @@ def test_streamable_http_server(tmp_path):
 # Валидация (ошибки)
 # ============================================================================
 
-def test_file_not_found(tmp_path):
+def test_file_not_found(tmp_path) -> None:
     """Несуществующий файл → FileNotFoundError."""
     with pytest.raises(FileNotFoundError):
         config_mcp.load_config(tmp_path / "missing.json")
 
 
-def test_empty_servers_raises(tmp_path):
+def test_empty_servers_raises(tmp_path) -> None:
     """Пустой список серверов → ValueError."""
     path = write_config(tmp_path, {"servers": []})
 
@@ -276,7 +276,7 @@ def test_empty_servers_raises(tmp_path):
         config_mcp.load_config(path)
 
 
-def test_missing_servers_key_raises(tmp_path):
+def test_missing_servers_key_raises(tmp_path) -> None:
     """Отсутствие ключа servers → ValueError."""
     path = write_config(tmp_path, {})
 
@@ -284,7 +284,7 @@ def test_missing_servers_key_raises(tmp_path):
         config_mcp.load_config(path)
 
 
-def test_server_without_name_raises(tmp_path):
+def test_server_without_name_raises(tmp_path) -> None:
     """Сервер без name → ValueError."""
     path = write_config(tmp_path, {
         "servers": [{"transport": {"type": "stdio", "command": "python"}}],
@@ -294,7 +294,7 @@ def test_server_without_name_raises(tmp_path):
         config_mcp.load_config(path)
 
 
-def test_duplicate_names_raise(tmp_path):
+def test_duplicate_names_raise(tmp_path) -> None:
     """Дублирующиеся имена серверов → ValueError."""
     path = write_config(tmp_path, {
         "servers": [
@@ -307,7 +307,7 @@ def test_duplicate_names_raise(tmp_path):
         config_mcp.load_config(path)
 
 
-def test_stdio_without_command_raises(tmp_path):
+def test_stdio_without_command_raises(tmp_path) -> None:
     """stdio-сервер без command → ValueError."""
     path = write_config(tmp_path, {
         "servers": [{"name": "tickets", "transport": {"type": "stdio"}}],
@@ -317,7 +317,7 @@ def test_stdio_without_command_raises(tmp_path):
         config_mcp.load_config(path)
 
 
-def test_http_without_url_raises(tmp_path):
+def test_http_without_url_raises(tmp_path) -> None:
     """streamable-http без url → ValueError."""
     path = write_config(tmp_path, {
         "servers": [{"name": "kb", "transport": {"type": "streamable-http"}}],
@@ -327,7 +327,7 @@ def test_http_without_url_raises(tmp_path):
         config_mcp.load_config(path)
 
 
-def test_unknown_transport_raises(tmp_path):
+def test_unknown_transport_raises(tmp_path) -> None:
     """Неизвестный тип транспорта → ValueError."""
     path = write_config(tmp_path, {
         "servers": [{"name": "x", "transport": {"type": "websocket"}}],

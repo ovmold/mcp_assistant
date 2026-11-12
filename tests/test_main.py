@@ -9,11 +9,11 @@ from mcp_assistant.client import main as main_module
 class FakeGigaChat:
     instances = []
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         self.closed = False
         self.__class__.instances.append(self)
 
-    def close(self):
+    def close(self) -> None:
         self.closed = True
 
 
@@ -21,46 +21,46 @@ class FakeMCPClient:
     instances = []
     connect_error = None
 
-    def __init__(self, config):
+    def __init__(self, config) -> None:
         self.closed = False
         self.__class__.instances.append(self)
 
-    async def connect_all(self):
+    async def connect_all(self) -> None:
         if self.connect_error is not None:
             raise self.connect_error
 
-    def get_all_tools(self):
+    def get_all_tools(self) -> dict:
         return {}
 
-    def get_all_resources(self):
+    def get_all_resources(self) -> dict:
         return {}
 
-    def get_all_resource_templates(self):
+    def get_all_resource_templates(self) -> dict:
         return {}
 
-    def get_all_prompts(self):
+    def get_all_prompts(self) -> dict:
         return {}
 
-    async def close_all(self):
+    async def close_all(self) -> None:
         self.closed = True
 
 
 class FakeTracer:
     instances = []
 
-    def __init__(self, path):
+    def __init__(self, path) -> None:
         self.closed = False
         self.__class__.instances.append(self)
 
-    def log(self, event_type, **data):
+    def log(self, event_type, **data) -> None:
         pass
 
-    def close(self):
+    def close(self) -> None:
         self.closed = True
 
 
 @pytest.fixture
-def main_mocks(monkeypatch):
+def main_mocks(monkeypatch) -> None:
     for cls in (FakeGigaChat, FakeMCPClient, FakeTracer):
         cls.instances = []
     FakeMCPClient.connect_error = None
@@ -76,14 +76,14 @@ def main_mocks(monkeypatch):
     monkeypatch.setenv("GIGACHAT_BASE_URL", "http://localhost")
     monkeypatch.setenv("MODEL", "test-model")
 
-    async def run_cli(agent):
+    async def run_cli(agent) -> None:
         pass
 
     monkeypatch.setattr(main_module, "run_cli", run_cli)
 
 
 @pytest.mark.anyio
-async def test_main_closes_resources_after_ui_stops(main_mocks):
+async def test_main_closes_resources_after_ui_stops(main_mocks) -> None:
     result = await main_module.main()
 
     assert result == 0
@@ -93,7 +93,7 @@ async def test_main_closes_resources_after_ui_stops(main_mocks):
 
 
 @pytest.mark.anyio
-async def test_main_closes_resources_when_mcp_connection_fails(main_mocks):
+async def test_main_closes_resources_when_mcp_connection_fails(main_mocks) -> None:
     FakeMCPClient.connect_error = RuntimeError("connection failed")
 
     result = await main_module.main()

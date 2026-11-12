@@ -48,7 +48,7 @@ class Agent:
         max_history_messages: int = 40,
         max_history_chars: int = 60_000,
         max_tool_result_chars: int = 12_000,
-    ):
+    ) -> None:
         self.mcp = mcp_client
         self.llm = llm
         self.tracer = tracer

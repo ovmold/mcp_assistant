@@ -13,7 +13,7 @@ from mcp_assistant.servers.tickets import (
 )
 
 
-def test_ticket_default_lists_are_independent():
+def test_ticket_default_lists_are_independent() -> None:
     """
     Регресс: два Ticket, созданных без явных messages/logs,
     не должны делить один и тот же список.
@@ -36,21 +36,21 @@ def test_ticket_default_lists_are_independent():
 # search_tickets
 # ============================================================================
 
-def test_search_by_subject(temp_db):
+def test_search_by_subject(temp_db) -> None:
     """Поиск по слову, которое есть в subject (тикеты 1 и 4)."""
     result = search_tickets("502")
     assert len(result) >= 2
     assert all("502" in t.subject or "502" in t.body for t in result)
 
 
-def test_search_by_body(temp_db):
+def test_search_by_body(temp_db) -> None:
     """Поиск по слову, которое есть только в body."""
     result = search_tickets("Bad Gateway")
     assert len(result) >= 1
     assert any("502" in t.subject for t in result)
 
 
-def test_search_phrase_with_extra_words(temp_db):
+def test_search_phrase_with_extra_words(temp_db) -> None:
     """
     Регресс: запрос с лишним словом и другой словоформой должен находить тикет.
     
@@ -69,13 +69,13 @@ def test_search_phrase_with_extra_words(temp_db):
     "оплате 502",          # другая форма
     "502 при оплате",      # с «при» в запросе
 ])
-def test_search_finds_502_ticket(temp_db, query):
+def test_search_finds_502_ticket(temp_db, query) -> None:
     """Разные формулировки одного и того же запроса должны находить тикет про 502."""
     result = search_tickets(query)
     assert any("502" in t.subject for t in result), f"Не найдено для запроса: {query}"
 
 
-def test_search_case_insensitive(temp_db):
+def test_search_case_insensitive(temp_db) -> None:
     """Регистр не должен влиять на результат (для ASCII и кириллицы)."""
     r1 = search_tickets("ОШИБКА")
     r2 = search_tickets("ошибка")
@@ -83,7 +83,7 @@ def test_search_case_insensitive(temp_db):
 
 
 @pytest.mark.parametrize("query", ["платёж", "платеж"])
-def test_search_normalizes_russian_e_and_yo(temp_db, query):
+def test_search_normalizes_russian_e_and_yo(temp_db, query) -> None:
     conn = sqlite3.connect(temp_db)
     conn.execute(
         "INSERT INTO tickets (id, subject, body, status, priority, client, "
@@ -100,7 +100,7 @@ def test_search_normalizes_russian_e_and_yo(temp_db, query):
     assert any(ticket.id == 6 for ticket in result)
 
 
-def test_search_leading_hyphen_is_literal_text(temp_db):
+def test_search_leading_hyphen_is_literal_text(temp_db) -> None:
     result = search_tickets("-502")
 
     assert result
@@ -108,37 +108,37 @@ def test_search_leading_hyphen_is_literal_text(temp_db):
 
 
 @pytest.mark.parametrize("query", ["оплата OR 502", "OR", "AND", "NOT"])
-def test_search_fts_operators_are_literal_text(temp_db, query):
+def test_search_fts_operators_are_literal_text(temp_db, query) -> None:
     assert isinstance(search_tickets(query), list)
 
 
-def test_search_empty_query_raises(temp_db):
+def test_search_empty_query_raises(temp_db) -> None:
     """Пустой запрос должен выбрасывать ToolError."""
     with pytest.raises(ToolError, match=r"(?i)пуст"):
         search_tickets("")
 
 
-def test_search_whitespace_query_raises(temp_db):
+def test_search_whitespace_query_raises(temp_db) -> None:
     """Запрос из одних пробелов тоже должен выбрасывать ToolError."""
     with pytest.raises(ToolError, match=r"(?i)пуст"):
         search_tickets("   ")
 
 
-def test_search_filter_by_status(temp_db):
+def test_search_filter_by_status(temp_db) -> None:
     """Фильтр по статусу оставляет только тикеты с этим статусом."""
     result = search_tickets("502", status="open")
     assert len(result) >= 1
     assert all(t.status == "open" for t in result)
 
 
-def test_search_filter_by_priority(temp_db):
+def test_search_filter_by_priority(temp_db) -> None:
     """Фильтр по приоритету оставляет только тикеты с этим приоритетом."""
     result = search_tickets("502", priority="high")
     assert len(result) >= 1
     assert all(t.priority == "high" for t in result)
 
 
-def test_search_filter_by_customer(temp_db):
+def test_search_filter_by_customer(temp_db) -> None:
     """Фильтр по клиенту оставляет только тикеты этого клиента."""
     result = search_tickets("502", customer="Globex")
     assert len(result) >= 1
@@ -150,14 +150,14 @@ def test_search_filter_by_customer(temp_db):
     ({"priority": "high"}, {1, 4}),
     ({"customer": "Globex"}, {1, 4}),
 ])
-def test_search_with_filters_only(temp_db, filters, expected_ids):
+def test_search_with_filters_only(temp_db, filters, expected_ids) -> None:
     result = search_tickets(**filters)
 
     assert {ticket.id for ticket in result} == expected_ids
 
 
 @pytest.mark.parametrize("query", [None, "", "   "])
-def test_search_with_empty_query_and_filters(temp_db, query):
+def test_search_with_empty_query_and_filters(temp_db, query) -> None:
     result = search_tickets(
         query=query,
         status="open",
@@ -173,18 +173,18 @@ def test_search_with_empty_query_and_filters(temp_db, query):
     ({"created_to": "2026-10-13"}, {3, 4, 5}),
     ({"created_from": "2026-10-10", "created_to": "2026-10-14"}, {2, 3, 4}),
 ])
-def test_search_by_created_date(temp_db, filters, expected_ids):
+def test_search_by_created_date(temp_db, filters, expected_ids) -> None:
     result = search_tickets(**filters)
 
     assert {ticket.id for ticket in result} == expected_ids
 
 
-def test_search_rejects_invalid_date(temp_db):
+def test_search_rejects_invalid_date(temp_db) -> None:
     with pytest.raises(ToolError, match=r"created_from.*ISO 8601"):
         search_tickets(created_from="не дата")
 
 
-def test_search_rejects_reversed_date_range(temp_db):
+def test_search_rejects_reversed_date_range(temp_db) -> None:
     with pytest.raises(ToolError, match=r"created_from.*позже"):
         search_tickets(
             created_from="2026-10-15",
@@ -192,19 +192,19 @@ def test_search_rejects_reversed_date_range(temp_db):
         )
 
 
-def test_search_limit(temp_db):
+def test_search_limit(temp_db) -> None:
     """limit ограничивает количество результатов."""
     result = search_tickets("ошибка", limit=1)
     assert len(result) <= 1
 
 
-def test_search_limit_clamped_to_min(temp_db):
+def test_search_limit_clamped_to_min(temp_db) -> None:
     """limit=0 должен стать 1, а не упасть или вернуть пусто."""
     result = search_tickets("502", limit=0)
     assert 1 <= len(result) <= 1
 
 
-def test_search_injection_in_ticket_does_not_break_search(temp_db):
+def test_search_injection_in_ticket_does_not_break_search(temp_db) -> None:
     """
     Тикет-ловушка не должен ломать поиск и не должен исполняться.
     
@@ -220,20 +220,20 @@ def test_search_injection_in_ticket_does_not_break_search(temp_db):
 # get_ticket
 # ============================================================================
 
-def test_get_ticket_found(temp_db):
+def test_get_ticket_found(temp_db) -> None:
     """Существующий тикет возвращается с корректными данными."""
     t = get_ticket(1)
     assert t.id == 1
     assert t.subject == "Ошибка 502 при оплате"
 
 
-def test_get_ticket_not_found(temp_db):
+def test_get_ticket_not_found(temp_db) -> None:
     """Несуществующий ID вызывает ToolError."""
     with pytest.raises(ToolError, match=r"(?i)не найден"):
         get_ticket(9999)
 
 
-def test_get_ticket_includes_messages(temp_db):
+def test_get_ticket_includes_messages(temp_db) -> None:
     """get_ticket возвращает сообщения вместе с тикетом."""
     add_comment(1, "Комментарий 1", author="support")
     add_comment(1, "Комментарий 2", author="client")
@@ -246,7 +246,7 @@ def test_get_ticket_includes_messages(temp_db):
     assert all(m.author in ("support", "client") for m in t.messages)
 
 
-def test_get_ticket_includes_logs(temp_db):
+def test_get_ticket_includes_logs(temp_db) -> None:
     """get_ticket возвращает записи лога вместе с тикетом."""
     conn = sqlite3.connect(temp_db)
     conn.execute(
@@ -263,14 +263,14 @@ def test_get_ticket_includes_logs(temp_db):
     assert any(l.level == "ERROR" for l in t.logs)
 
 
-def test_get_ticket_empty_messages_and_logs(temp_db):
+def test_get_ticket_empty_messages_and_logs(temp_db) -> None:
     """Тикет без сообщений и логов возвращает пустые списки, а не None."""
     t = get_ticket(5)   # у тикета 5 нет активности
     assert t.messages == []
     assert t.logs == []
 
 
-def test_get_ticket_messages_ordered_by_created_at(temp_db):
+def test_get_ticket_messages_ordered_by_created_at(temp_db) -> None:
     """Сообщения отсортированы по created_at ASC, id ASC."""
     conn = sqlite3.connect(temp_db)
     conn.execute("DELETE FROM messages WHERE ticket_id = 1")
@@ -291,7 +291,7 @@ def test_get_ticket_messages_ordered_by_created_at(temp_db):
     assert texts == ["первое", "второе", "третье"]
 
 
-def test_search_tickets_returns_empty_messages_and_logs(temp_db):
+def test_search_tickets_returns_empty_messages_and_logs(temp_db) -> None:
     """
     Контракт: search_tickets НЕ грузит messages/logs.
     Полную карточку дает get_ticket(id).
@@ -307,7 +307,7 @@ def test_search_tickets_returns_empty_messages_and_logs(temp_db):
 # add_comment
 # ============================================================================
 
-def test_add_comment(temp_db):
+def test_add_comment(temp_db) -> None:
     """Комментарий сохраняется и обновляет updated_at тикета."""
     id = 2
     previous_updated_at = get_ticket(id).updated_at
@@ -332,12 +332,12 @@ def test_add_comment(temp_db):
     assert ticket_updated_at != previous_updated_at
 
 
-def test_add_comment_requires_nonempty_author(temp_db):
+def test_add_comment_requires_nonempty_author(temp_db) -> None:
     with pytest.raises(ToolError, match=r"(?i)author пуст"):
         add_comment(2, "Комментарий", author="   ")
 
 
-def test_add_comment_to_missing_ticket(temp_db):
+def test_add_comment_to_missing_ticket(temp_db) -> None:
     """Комментарий к несуществующему тикету вызывает ToolError."""
     with pytest.raises(ToolError, match=r"(?i)не найден"):
         add_comment(9999, "текст", author="support")
@@ -346,7 +346,7 @@ def test_add_comment_to_missing_ticket(temp_db):
 # update_status
 # ============================================================================
 
-def test_update_status(temp_db):
+def test_update_status(temp_db) -> None:
     """Статус обновляется, добавляется комментарий и возвращается результат."""
     result = update_status(1, "closed", "Проблема решена")
 
@@ -366,19 +366,19 @@ def test_update_status(temp_db):
     assert result.comment_id == msg[0]
 
 
-def test_update_status_invalid_value(temp_db):
+def test_update_status_invalid_value(temp_db) -> None:
     """Недопустимый статус вызывает ToolError."""
     with pytest.raises(ToolError, match=r"(?i)неправильный"):
         update_status(1, "garbage", "причина")
 
 
-def test_update_status_missing_ticket(temp_db):
+def test_update_status_missing_ticket(temp_db) -> None:
     """Смена статуса у несуществующего тикета вызывает ToolError."""
     with pytest.raises(ToolError, match=r"(?i)не найден"):
         update_status(9999, "closed", "причина")
 
 
-def test_update_status_rejects_unchanged_status(temp_db):
+def test_update_status_rejects_unchanged_status(temp_db) -> None:
     previous_updated_at = get_ticket(1).updated_at
 
     with pytest.raises(ToolError, match=r"уже имеет статус open"):
@@ -390,7 +390,7 @@ def test_update_status_rejects_unchanged_status(temp_db):
     assert ticket.messages == []
 
 
-def test_update_status_cannot_reopen_closed_ticket(temp_db):
+def test_update_status_cannot_reopen_closed_ticket(temp_db) -> None:
     update_status(1, "closed", "Закрыт")
 
     with pytest.raises(ToolError, match=r"closed на open"):
@@ -401,7 +401,7 @@ def test_update_status_cannot_reopen_closed_ticket(temp_db):
     assert len(ticket.messages) == 1
 
 
-def test_db_cursor_enables_foreign_keys(temp_db):
+def test_db_cursor_enables_foreign_keys(temp_db) -> None:
     with _db_cursor() as cursor:
         assert cursor.execute("PRAGMA foreign_keys").fetchone()[0] == 1
         with pytest.raises(sqlite3.IntegrityError):
@@ -412,7 +412,7 @@ def test_db_cursor_enables_foreign_keys(temp_db):
             )
 
 
-def test_fts_update_trigger_is_limited_to_indexed_columns(temp_db):
+def test_fts_update_trigger_is_limited_to_indexed_columns(temp_db) -> None:
     conn = sqlite3.connect(temp_db)
     sql = conn.execute(
         "SELECT sql FROM sqlite_master WHERE name = 'tickets_au'"
@@ -422,7 +422,7 @@ def test_fts_update_trigger_is_limited_to_indexed_columns(temp_db):
     assert "AFTER UPDATE OF subject, body" in " ".join(sql.split())
 
 
-def test_update_status_fts_sync(temp_db):
+def test_update_status_fts_sync(temp_db) -> None:
     """
     Проверяет, что триггер FTS обновил индекс после смены subject.
     
@@ -440,7 +440,7 @@ def test_update_status_fts_sync(temp_db):
 # Ресурс: get_ticket_resource (ticket://{ticket_id})
 # ============================================================================
 
-def test_get_ticket_resource_found(temp_db):
+def test_get_ticket_resource_found(temp_db) -> None:
     """Существующий тикет возвращается в виде Markdown-карточки."""
     result = get_ticket_resource("1")
     
@@ -458,19 +458,19 @@ def test_get_ticket_resource_found(temp_db):
     assert "## Лог" in result
 
 
-def test_get_ticket_resource_invalid_id_format(temp_db):
+def test_get_ticket_resource_invalid_id_format(temp_db) -> None:
     """Нечисловой ID вызывает ValueError с понятным сообщением."""
     with pytest.raises(ValueError, match=r"(?i)неправильный id"):
         get_ticket_resource("abc")
 
 
-def test_get_ticket_resource_not_found(temp_db):
+def test_get_ticket_resource_not_found(temp_db) -> None:
     """Несуществующий ID вызывает ValueError."""
     with pytest.raises(ValueError, match=r"(?i)не найден"):
         get_ticket_resource("9999")
 
 
-def test_get_ticket_resource_shows_messages(temp_db):
+def test_get_ticket_resource_shows_messages(temp_db) -> None:
     """Сообщения попадают в карточку ресурса."""
     add_comment(1, "Уникальный текст сообщения", author="support")
     result = get_ticket_resource("1")
@@ -479,7 +479,7 @@ def test_get_ticket_resource_shows_messages(temp_db):
     assert "support" in result
 
 
-def test_get_ticket_resource_empty_sections(temp_db):
+def test_get_ticket_resource_empty_sections(temp_db) -> None:
     """Для тикета без активности отображаются заглушки."""
     t = get_ticket_resource("5")   # тикет без messages/logs
     assert "_Сообщений нет._" in t
@@ -490,7 +490,7 @@ def test_get_ticket_resource_empty_sections(temp_db):
 # Ресурс: get_ticket_stats_resource (tickets://stats)
 # ============================================================================
 
-def test_get_ticket_stats_resource(temp_db):
+def test_get_ticket_stats_resource(temp_db) -> None:
     """Ресурс возвращает корректную статистику по статусам и приоритетам."""
     result = get_ticket_stats_resource()
     
@@ -511,7 +511,7 @@ def test_get_ticket_stats_resource(temp_db):
     assert "- **medium:** 1" in result
 
 
-def test_get_ticket_stats_resource_empty_db(temp_db):
+def test_get_ticket_stats_resource_empty_db(temp_db) -> None:
     """Пустая база данных (без тикетов) возвращает нулевую статистику."""
     # Очищаем таблицу tickets прямо в тестовой БД
     conn = sqlite3.connect(temp_db)
@@ -533,14 +533,14 @@ def test_get_ticket_stats_resource_empty_db(temp_db):
 # Prompt: analyze_ticket
 # ============================================================================
 
-def test_analyze_ticket_returns_two_messages():
+def test_analyze_ticket_returns_two_messages() -> None:
     """Промпт возвращает ровно два сообщения: запрос и подтверждение."""
     result = analyze_ticket("1042")
     assert isinstance(result, list)
     assert len(result) == 2
 
 
-def test_analyze_ticket_contains_ticket_id():
+def test_analyze_ticket_contains_ticket_id() -> None:
     """ID тикета подставляется в текст запроса (а не остается шаблоном)."""
     result = analyze_ticket("1042")
     user_text = result[0].content.text  
@@ -549,7 +549,7 @@ def test_analyze_ticket_contains_ticket_id():
     assert "{ticket_id}" not in user_text  # шаблон не должен остаться
 
 
-def test_analyze_ticket_contains_required_sections():
+def test_analyze_ticket_contains_required_sections() -> None:
     """Промпт содержит все три секции, которые ожидает LLM."""
     result = analyze_ticket("1042")
     user_text = result[0].content.text
@@ -559,7 +559,7 @@ def test_analyze_ticket_contains_required_sections():
     assert "## Следующий шаг" in user_text
 
 
-def test_analyze_ticket_mentions_resource_uri():
+def test_analyze_ticket_mentions_resource_uri() -> None:
     """Промпт явно указывает, что данные нужно взять из ресурса ticket://..."""
     result = analyze_ticket("1042")
     user_text = result[0].content.text
@@ -567,7 +567,7 @@ def test_analyze_ticket_mentions_resource_uri():
     assert "ticket://1042" in user_text
 
 
-def test_analyze_ticket_message_types():
+def test_analyze_ticket_message_types() -> None:
     """Первое сообщение — UserMessage, второе — AssistantMessage."""
     result = analyze_ticket("1042")
     assert isinstance(result[0], UserMessage)

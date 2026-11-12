@@ -7,15 +7,15 @@ from mcp_assistant import config as conf
 
 
 class EvalTracer:
-    def __init__(self):
+    def __init__(self) -> None:
         self.events = []
 
-    def log(self, event_type: str, **data):
+    def log(self, event_type: str, **data) -> None:
         self.events.append((event_type, data))
 
 
 class EvalConfirmation:
-    def __init__(self, responses=None):
+    def __init__(self, responses=None) -> None:
         self.responses = responses or []
         self.index = 0
 
@@ -115,7 +115,7 @@ def _collect_calls(tracer: EvalTracer) -> list[dict]:
         if event == "tool_call"
     ]
 
-    def mark_result(data, succeeded):
+    def mark_result(data, succeeded) -> None:
         for call in calls:
             if call["tool"] == data["tool"] and call["succeeded"] is None:
                 call["succeeded"] = succeeded

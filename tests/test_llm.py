@@ -11,21 +11,21 @@ from mcp_assistant.client.llm import GigaChatLLMClient, OpenAILLMClient, create_
 class FakeGigaChat:
     instances = []
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         self.kwargs = kwargs
         self.closed = False
         self.__class__.instances.append(self)
 
-    def close(self):
+    def close(self) -> None:
         self.closed = True
 
 
 class FakeCompletions:
-    def __init__(self, responses=None):
+    def __init__(self, responses=None) -> None:
         self.responses = list(responses or [])
         self.requests = []
 
-    def create(self, **kwargs):
+    def create(self, **kwargs) -> SimpleNamespace:
         self.requests.append(kwargs)
         return self.responses.pop(0)
 
@@ -33,18 +33,18 @@ class FakeCompletions:
 class FakeOpenAI:
     instances = []
 
-    def __init__(self, responses=None, **kwargs):
+    def __init__(self, responses=None, **kwargs) -> None:
         self.kwargs = kwargs
         self.closed = False
         self.completions = FakeCompletions(responses)
         self.chat = SimpleNamespace(completions=self.completions)
         self.__class__.instances.append(self)
 
-    def close(self):
+    def close(self) -> None:
         self.closed = True
 
 
-def make_openai_response(content=None, calls=None):
+def make_openai_response(content=None, calls=None) -> SimpleNamespace:
     tool_calls = [
         SimpleNamespace(
             id=call_id,
@@ -69,7 +69,7 @@ def make_openai_response(content=None, calls=None):
 
 
 @pytest.mark.anyio
-async def test_openai_chat_sends_tools_and_maps_text_response():
+async def test_openai_chat_sends_tools_and_maps_text_response() -> None:
     sdk = FakeOpenAI(responses=[make_openai_response(content="Готово")])
     client = OpenAILLMClient(sdk, "gpt-test")
     functions = [{
@@ -93,7 +93,7 @@ async def test_openai_chat_sends_tools_and_maps_text_response():
 
 
 @pytest.mark.anyio
-async def test_openai_parallel_tool_calls_keep_ids_and_raw_arguments():
+async def test_openai_parallel_tool_calls_keep_ids_and_raw_arguments() -> None:
     sdk = FakeOpenAI(responses=[make_openai_response(
         content="Проверю оба источника",
         calls=[
@@ -113,7 +113,7 @@ async def test_openai_parallel_tool_calls_keep_ids_and_raw_arguments():
     assert Agent._response_text(response) == "Проверю оба источника"
 
 
-def test_openai_history_expands_parallel_results_into_tool_messages():
+def test_openai_history_expands_parallel_results_into_tool_messages() -> None:
     messages = [
         {"role": "system", "content": "system"},
         {"role": "user", "content": "question"},
@@ -183,7 +183,7 @@ def test_openai_history_expands_parallel_results_into_tool_messages():
     assert converted[5] == {"role": "user", "content": "prompt from MCP"}
 
 
-def test_create_llm_defaults_to_gigachat(monkeypatch):
+def test_create_llm_defaults_to_gigachat(monkeypatch) -> None:
     FakeGigaChat.instances = []
     monkeypatch.setattr(llm_module, "GigaChat", FakeGigaChat)
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
@@ -206,7 +206,7 @@ def test_create_llm_defaults_to_gigachat(monkeypatch):
     assert FakeGigaChat.instances[0].closed
 
 
-def test_create_llm_selects_openai(monkeypatch):
+def test_create_llm_selects_openai(monkeypatch) -> None:
     FakeOpenAI.instances = []
     monkeypatch.setattr(llm_module, "OpenAI", FakeOpenAI)
     monkeypatch.setenv("LLM_PROVIDER", " OpenAI ")
@@ -226,7 +226,7 @@ def test_create_llm_selects_openai(monkeypatch):
     assert FakeOpenAI.instances[0].closed
 
 
-def test_create_llm_rejects_unknown_provider(monkeypatch):
+def test_create_llm_rejects_unknown_provider(monkeypatch) -> None:
     monkeypatch.setenv("LLM_PROVIDER", "unknown")
     monkeypatch.setenv("MODEL", "test")
 
@@ -234,7 +234,7 @@ def test_create_llm_rejects_unknown_provider(monkeypatch):
         create_llm(timeout=10)
 
 
-def test_openai_requires_api_key(monkeypatch):
+def test_openai_requires_api_key(monkeypatch) -> None:
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("MODEL", "gpt-test")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -244,7 +244,7 @@ def test_openai_requires_api_key(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_agent_completes_openai_tool_round_trip():
+async def test_agent_completes_openai_tool_round_trip() -> None:
     sdk = FakeOpenAI(responses=[
         make_openai_response(calls=[(
             "call-1",
@@ -256,7 +256,7 @@ async def test_agent_completes_openai_tool_round_trip():
     client = OpenAILLMClient(sdk, "gpt-test")
 
     class MCP:
-        def get_all_tools(self):
+        def get_all_tools(self) -> dict:
             return {"tickets": [SimpleNamespace(
                 name="search_tickets",
                 description="Поиск",
@@ -268,16 +268,16 @@ async def test_agent_completes_openai_tool_round_trip():
                 annotations=SimpleNamespace(read_only_hint=True),
             )]}
 
-        def get_all_resources(self):
+        def get_all_resources(self) -> dict:
             return {}
 
-        def get_all_resource_templates(self):
+        def get_all_resource_templates(self) -> dict:
             return {}
 
-        def get_all_prompts(self):
+        def get_all_prompts(self) -> dict:
             return {}
 
-        async def call_tool(self, server, tool, arguments):
+        async def call_tool(self, server, tool, arguments) -> SimpleNamespace:
             assert (server, tool, arguments) == (
                 "tickets", "search_tickets", {"query": "502"}
             )
@@ -287,7 +287,7 @@ async def test_agent_completes_openai_tool_round_trip():
             )
 
     class Tracer:
-        def log(self, event_type, **data):
+        def log(self, event_type, **data) -> None:
             pass
 
     agent = Agent(MCP(), client, Tracer(), confirmation=None)

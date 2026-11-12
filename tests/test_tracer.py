@@ -22,7 +22,7 @@ def read_jsonl(path: Path) -> list[dict]:
 # Базовые сценарии
 # ============================================================================
 
-def test_creates_file(tmp_path):
+def test_creates_file(tmp_path) -> None:
     """Tracer создаёт файл, если его нет."""
     path = tmp_path / "trace.jsonl"
     tracer = Tracer(path)
@@ -32,7 +32,7 @@ def test_creates_file(tmp_path):
     assert path.exists()
 
 
-def test_creates_parent_dirs(tmp_path):
+def test_creates_parent_dirs(tmp_path) -> None:
     """Tracer создаёт родительские папки, если их нет."""
     path = tmp_path / "nested" / "dir" / "trace.jsonl"
     tracer = Tracer(path)
@@ -42,7 +42,7 @@ def test_creates_parent_dirs(tmp_path):
     assert path.exists()
 
 
-def test_each_line_is_valid_json(tmp_path):
+def test_each_line_is_valid_json(tmp_path) -> None:
     """Каждая строка файла — валидный JSON."""
     path = tmp_path / "trace.jsonl"
     with Tracer(path) as t:
@@ -55,7 +55,7 @@ def test_each_line_is_valid_json(tmp_path):
         json.loads(line)  # не должно упасть
 
 
-def test_log_contains_type_and_timestamp(tmp_path):
+def test_log_contains_type_and_timestamp(tmp_path) -> None:
     """Запись содержит поля type и timestamp."""
     path = tmp_path / "trace.jsonl"
     with Tracer(path) as t:
@@ -70,7 +70,7 @@ def test_log_contains_type_and_timestamp(tmp_path):
     assert rec["tool"] == "search"
 
 
-def test_log_accepts_arbitrary_data(tmp_path):
+def test_log_accepts_arbitrary_data(tmp_path) -> None:
     """log() принимает любые именованные аргументы."""
     path = tmp_path / "trace.jsonl"
     with Tracer(path) as t:
@@ -95,7 +95,7 @@ def test_log_accepts_arbitrary_data(tmp_path):
 # Спецсимволы
 # ============================================================================
 
-def test_unicode_not_escaped(tmp_path):
+def test_unicode_not_escaped(tmp_path) -> None:
     """Русские буквы сохраняются как есть (ensure_ascii=False)."""
     path = tmp_path / "trace.jsonl"
     with Tracer(path) as t:
@@ -107,7 +107,7 @@ def test_unicode_not_escaped(tmp_path):
     assert "\\u" not in raw
 
 
-def test_newlines_in_values_escaped(tmp_path):
+def test_newlines_in_values_escaped(tmp_path) -> None:
     """Переносы строк внутри значений экранируются, строка остаётся одной."""
     path = tmp_path / "trace.jsonl"
     with Tracer(path) as t:
@@ -119,7 +119,7 @@ def test_newlines_in_values_escaped(tmp_path):
     assert rec["text"] == "строка 1\nстрока 2"
 
 
-def test_quotes_escaped(tmp_path):
+def test_quotes_escaped(tmp_path) -> None:
     """Кавычки внутри значений не ломают JSON."""
     path = tmp_path / "trace.jsonl"
     with Tracer(path) as t:
@@ -133,7 +133,7 @@ def test_quotes_escaped(tmp_path):
 # flush и добавление в файл
 # ============================================================================
 
-def test_flush_writes_immediately(tmp_path):
+def test_flush_writes_immediately(tmp_path) -> None:
     """После log() данные уже видны в файле (flush)."""
     path = tmp_path / "trace.jsonl"
     tracer = Tracer(path)
@@ -147,7 +147,7 @@ def test_flush_writes_immediately(tmp_path):
     tracer.close()
 
 
-def test_appends_to_existing_file(tmp_path):
+def test_appends_to_existing_file(tmp_path) -> None:
     """Tracer не перезаписывает файл, а дописывает в конец."""
     path = tmp_path / "trace.jsonl"
     path.write_text('{"type": "old"}\n', encoding="utf-8")
@@ -165,7 +165,7 @@ def test_appends_to_existing_file(tmp_path):
 # Контекстный менеджер
 # ============================================================================
 
-def test_context_manager_closes_file(tmp_path):
+def test_context_manager_closes_file(tmp_path) -> None:
     """После выхода из with файл закрыт."""
     path = tmp_path / "trace.jsonl"
     with Tracer(path) as t:
@@ -176,7 +176,7 @@ def test_context_manager_closes_file(tmp_path):
         t._file.write("test")
 
 
-def test_close_idempotent(tmp_path):
+def test_close_idempotent(tmp_path) -> None:
     """Повторный close() не ломает Tracer."""
     path = tmp_path / "trace.jsonl"
     tracer = Tracer(path)
@@ -189,7 +189,7 @@ def test_close_idempotent(tmp_path):
 # Ошибки
 # ============================================================================
 
-def test_log_after_close_does_not_write(tmp_path):
+def test_log_after_close_does_not_write(tmp_path) -> None:
     """log() после close() не должен добавлять строки в файл."""
     path = tmp_path / "trace.jsonl"
     tracer = Tracer(path)

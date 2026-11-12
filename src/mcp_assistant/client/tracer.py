@@ -12,7 +12,7 @@ from typing import Any
 class Tracer:
     """Пишет события сессии в JSONL-файл."""
 
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._file = open(self.path, "a", encoding="utf-8")

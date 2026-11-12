@@ -3,6 +3,8 @@ import json
 import time
 
 import gradio as gr
+import uvicorn
+from fastapi import FastAPI
 
 from mcp_assistant.client.agent import Agent
 from mcp_assistant.client.confirmation import GradioConfirmation
@@ -36,7 +38,7 @@ def _remove_expired_sessions(agent: Agent, timeout: float) -> None:
 
 
 def _clear_completed_task(state: dict) -> None:
-    """Освобождает сессию и извлекает исключение фоновой задачи."""
+    """Очищает ссылку на завершённую задачу и извлекает её исключение."""
     task = state.get("task")
     if task is None or not task.done():
         return
@@ -56,16 +58,24 @@ def build_gradio_ui(agent: Agent, session_timeout: float = 300.0) -> gr.Blocks:
             submit_btn = gr.Button("Отправить", variant="primary")
             clear_btn = gr.Button("Очистить")
 
-        async def respond(message: str, history: list, request: gr.Request):
+        async def respond(
+            message: str,
+            history: list[dict[str, str]] | None,
+            request: gr.Request,
+        ) -> tuple[list[dict[str, str]], str]:
+            # Проверяет входные данные и убирает пробелы по краям сообщения
             if history is None:
                 history = []
             if not message or not message.strip():
                 return history, ""
 
             message = message.strip()
+
+            # Определяет сессию и удаляет давно неактивные
             session_id = request.session_hash if request else "default"
             _remove_expired_sessions(agent, session_timeout)
 
+            # Создает состояние новой сессии или обновляем активность текущей
             state = _sessions.get(session_id)
             if state is None:
                 state = _new_session()
@@ -76,22 +86,27 @@ def build_gradio_ui(agent: Agent, session_timeout: float = 300.0) -> gr.Blocks:
 
             conf = state["conf"]
 
+            # Если агент ждет подтверждения, передает ответ текущей задаче
             if state["task"] is not None and conf.pending is not None:
                 history.append({"role": "user", "content": message})
                 approved = message.lower() in {"да", "yes", "y", "д"}
                 conf.resolve(approved)
             else:
+                # Не запускает вторую задачу, пока предыдущая еще выполняется
                 if state["task"] is not None:
                     history.append({"role": "user", "content": message})
                     history.append({"role": "assistant", "content": "Подождите, агент ещё работает..."})
                     return history, ""
 
+                # Запускает новый запрос агента в фоне
                 history.append({"role": "user", "content": message})
                 state["task"] = asyncio.create_task(
                     agent.run(message, confirmation=conf, session_id=session_id)
                 )
 
+            # Ждет либо завершения агента, либо запроса подтверждения
             task = state["task"]
+            # Shield не дает отмене HTTP-запроса остановить работу агента
             shielded_task = asyncio.shield(task)
             event_task = asyncio.create_task(conf.wait_requested())
 
@@ -101,8 +116,10 @@ def build_gradio_ui(agent: Agent, session_timeout: float = 300.0) -> gr.Blocks:
                     return_when=asyncio.FIRST_COMPLETED,
                 )
             finally:
+                # Освобождает вспомогательное ожидание независимо от результата
                 event_task.cancel()
 
+            # Показывает конечный ответ либо данные операции для подтверждения
             if shielded_task in done:
                 state["task"] = None
                 try:
@@ -127,7 +144,7 @@ def build_gradio_ui(agent: Agent, session_timeout: float = 300.0) -> gr.Blocks:
                 "Напишите **да** или **нет**."
             )
 
-        def clear_chat(request: gr.Request):
+        def clear_chat(request: gr.Request) -> tuple[list, str]:
             session_id = request.session_hash if request else "default"
             _remove_session(agent, session_id)
             return [], ""
@@ -137,3 +154,26 @@ def build_gradio_ui(agent: Agent, session_timeout: float = 300.0) -> gr.Blocks:
         clear_btn.click(clear_chat, None, [chatbot, msg])
 
     return demo
+
+
+async def run_gradio(
+    agent: Agent,
+    host: str,
+    port: int,
+    session_timeout: float = 300.0,
+) -> None:
+    """Запускает Gradio внутри текущего event loop.
+
+    Использует uvicorn.Server + mount_gradio_app, а НЕ demo.launch(),
+    чтобы обработчики работали в том же цикле, что и MCPClient.
+    """
+    demo = build_gradio_ui(agent, session_timeout=session_timeout)
+    demo.queue()  # очередь нужна для async-обработчиков
+
+    app = FastAPI()
+    app = gr.mount_gradio_app(app, demo, path="/")
+
+    server = uvicorn.Server(
+        uvicorn.Config(app, host=host, port=port, log_level="info")
+    )
+    await server.serve()

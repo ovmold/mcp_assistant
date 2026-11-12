@@ -1,7 +1,7 @@
 from mcp_assistant.client.agent_prompts import build_system_prompt
 
 
-def test_system_prompt_supports_relative_date_filters():
+def test_system_prompt_supports_relative_date_filters() -> None:
     prompt = build_system_prompt([])
 
     assert "Текущая дата и время в UTC:" in prompt
