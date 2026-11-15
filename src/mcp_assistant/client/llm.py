@@ -3,7 +3,7 @@
 import asyncio
 import json
 import os
-from typing import Any, Protocol
+from typing import Protocol
 
 from gigachat import GigaChat
 from gigachat.models import (
@@ -25,7 +25,9 @@ class ChatLLM(Protocol):
         self,
         messages: list[dict],
         functions: list[dict] | None = None,
-    ) -> Any: ...
+    ) -> ChatCompletionResponse: ...
+
+    def close(self) -> None: ...
 
 
 class GigaChatLLMClient:
@@ -39,7 +41,7 @@ class GigaChatLLMClient:
         self,
         messages: list[dict],
         functions: list[dict] | None = None,
-    ) -> Any:
+    ) -> ChatCompletionResponse:
         """Отправляет запрос в GigaChat в отдельном потоке."""
 
         def _sync_chat() -> ChatCompletionResponse:
@@ -95,6 +97,7 @@ class OpenAILLMClient:
 
     @classmethod
     def _to_openai_messages(cls, messages: list[dict]) -> list[dict]:
+        """Преобразует внутреннюю историю агента в сообщения OpenAI."""
         converted = []
         for message in messages:
             role = message["role"]
@@ -108,6 +111,7 @@ class OpenAILLMClient:
 
     @staticmethod
     def _assistant_to_openai(message: dict) -> dict:
+        """Преобразует текст и вызовы функций ассистента в формат OpenAI."""
         content = message.get("content")
         if not isinstance(content, list):
             return {"role": "assistant", "content": content}
@@ -134,6 +138,7 @@ class OpenAILLMClient:
 
     @staticmethod
     def _tool_results_to_openai(message: dict) -> list[dict]:
+        """Разворачивает результаты вызовов в отдельные tool-сообщения OpenAI."""
         converted = []
         for part in message.get("content") or []:
             result = part["function_result"]
@@ -146,6 +151,7 @@ class OpenAILLMClient:
 
     @staticmethod
     def _from_openai_response(response) -> ChatCompletionResponse:
+        """Преобразует ответ OpenAI SDK во внутренний ChatCompletionResponse."""
         messages = []
         for choice in response.choices:
             source = choice.message
@@ -181,8 +187,8 @@ class OpenAILLMClient:
         )
 
 
-def create_llm(timeout: float) -> GigaChatLLMClient | OpenAILLMClient:
-    """Создаёт выбранный через LLM_PROVIDER клиент; по умолчанию GigaChat."""
+def create_llm(timeout: float) -> ChatLLM:
+    """Создает выбранный через LLM_PROVIDER клиент; по умолчанию GigaChat."""
     provider = os.environ.get("LLM_PROVIDER", "gigachat").strip().lower()
     model = os.environ.get("MODEL")
     if not model:

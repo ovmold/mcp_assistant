@@ -22,6 +22,7 @@ from mcp.types import (
 
 
 def _format_exception(error: Exception) -> str:
+    """Рекурсивно разворачивает ExceptionGroup в строку с исходными причинами."""
     if isinstance(error, ExceptionGroup):
         return "; ".join(
             _format_exception(suberror) for suberror in error.exceptions
@@ -38,7 +39,7 @@ class MCPClient:
         self._resources: dict[str, list[Resource]] = {}
         self._resource_templates: dict[str, list[ResourceTemplate]] = {}
         self._prompts: dict[str, list[Prompt]] = {}
-        self._exit_stack = AsyncExitStack()
+        self._exit_stack = AsyncExitStack() # Открытые MCP-подключения
 
     async def connect_all(self) -> None:
         """Подключает все серверы или сообщает обо всех ошибках подключения."""
@@ -59,6 +60,7 @@ class MCPClient:
             raise RuntimeError("Не удалось подключиться ни к одному серверу")
 
     async def _connect(self, name: str, config: dict) -> None:
+        """Подключает сервер по выбранному транспорту и регистрирует его возможности."""
         transport = config["transport"]
 
         if transport["type"] == "stdio":

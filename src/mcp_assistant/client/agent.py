@@ -17,17 +17,17 @@ from mcp_assistant.client import agent_prompts
 # ============================================================================
 
 def wrap_tool_result(server: str, tool: str, result: str) -> str:
-    """Помечает результат как данные и экранирует XML-подобную разметку в нём."""
+    """Помечает результат как данные и экранирует XML-подобную разметку в нем"""
     escaped_result = html.escape(result)
     return f"<tool_result server='{server}' tool='{tool}'>\n{escaped_result}\n</tool_result>"
 
 
 class InvalidToolArgumentsError(ValueError):
-    pass
+    """Сигнализирует о некорректных аргументах, сформированных моделью"""
 
 
 class UserConfirmationDeniedError(Exception):
-    pass
+    """Сигнализирует об отказе пользователя и останавливает оставшиеся действия"""
 
 
 # ============================================================================
@@ -35,7 +35,7 @@ class UserConfirmationDeniedError(Exception):
 # ============================================================================
 
 class Agent:
-    """Агент, который связывает LLM, MCP-инструменты и защиту."""
+    """Агент, который связывает LLM, MCP-инструменты и защиту"""
 
     def __init__(
         self,
@@ -46,8 +46,8 @@ class Agent:
         max_steps: int = 8,
         always_confirm_tools: dict[str, set[str]] | None = None,
         max_history_messages: int = 40,
-        max_history_chars: int = 60_000,
-        max_tool_result_chars: int = 12_000,
+        max_history_chars: int = 60000,
+        max_tool_result_chars: int = 12000,
     ) -> None:
         self.mcp = mcp_client
         self.llm = llm
@@ -65,10 +65,13 @@ class Agent:
             self.converter.register_server_tools(server, tools)
         self._add_capability_tools()
 
-        self.gigachat_functions = self.converter.get_tool_specs()
-        self.system_prompt = agent_prompts.build_system_prompt(self.gigachat_functions)
+        self.tool_specs = self.converter.get_tool_specs()
+        self.system_prompt = agent_prompts.build_system_prompt(self.tool_specs)
 
     def _add_capability_tools(self) -> None:
+        """
+        Добавляет read-only инструменты для чтения MCP-ресурсов и применения       промптов, чтобы LLM могла ими пользоваться через привычный function calling
+        """
         resources = self.mcp.get_all_resources()
         templates = self.mcp.get_all_resource_templates()
         prompts = self.mcp.get_all_prompts()
@@ -121,11 +124,11 @@ class Agent:
     # --- управление историей ------------------------------------------------
 
     def reset(self, session_id: str = "default") -> None:
-        """Очистить историю диалога (кнопка «Очистить» / новый разговор)."""
+        """Очистит историю диалога (кнопка «Очистить» / новый разговор)"""
         self._histories.pop(session_id, None)
 
     def get_history(self, session_id: str = "default") -> list[dict]:
-        """Копия истории — для тестов и отладки."""
+        """Копия истории — для тестов и отладки"""
         return [dict(m) for m in self._histories.get(session_id, [])]
 
     @staticmethod
@@ -133,7 +136,7 @@ class Agent:
         return sum(len(json.dumps(message, ensure_ascii=False)) for message in messages)
 
     def _trim(self, session_id: str) -> None:
-        """Удаляет старые целые ходы до соблюдения лимитов сообщений и символов."""
+        """Удаляет старые целые ходы до соблюдения лимитов сообщений и символов"""
         messages = self._histories.get(session_id)
         if not messages:
             return
@@ -159,8 +162,13 @@ class Agent:
         confirmation: ConfirmationProvider | None = None,
         session_id: str = "default",
     ) -> str:
+        """Обрабатывает запрос и возвращает конечный ответ.
+
+        Выполняет вызовы модели и MCP-инструментов, запрашивая подтверждение
+        для операций записи и останавливая оставшиеся действия после отказа.
+        """
         confirmation = confirmation or self.confirmation
-        self.system_prompt = agent_prompts.build_system_prompt(self.gigachat_functions)
+        self.system_prompt = agent_prompts.build_system_prompt(self.tool_specs)
 
         messages = self._histories.setdefault(session_id, [])
         if not messages:
@@ -168,14 +176,14 @@ class Agent:
         else:
             messages[0]["content"] = self.system_prompt
 
-        self._trim(session_id)                    # обрезает ДО нового хода
+        self._trim(session_id)  # старая история обрезается
         messages.append({"role": "user", "content": user_input})
         self.tracer.log("user_request", content=user_input, session_id=session_id)
         invalid_argument_attempts = 0
 
-        for step in range(1, self.max_steps + 1):
+        for step in range(1, self.max_steps + 1): # основной агентный цикл
             try:
-                response = await self.llm.chat(messages, self.gigachat_functions)
+                response = await self.llm.chat(messages, self.tool_specs)
             except Exception as e:
                 self.tracer.log("llm_error", error=str(e), session_id=session_id)
                 error_msg = f"Ошибка: не удалось получить ответ от модели ({e})"
@@ -183,6 +191,7 @@ class Agent:
                 self._trim(session_id)
                 return error_msg
 
+            # Извлечение вызовов инструментов
             batches = self._get_call_batches(response)
             if not batches:
                 final = self._response_text(response)
@@ -207,6 +216,7 @@ class Agent:
                 for message in response.messages
             )
 
+            # Выполнение пакета вызовов
             for assistant_message, batch_calls in batches:
                 outcomes = await self._execute_call_batch(batch_calls, confirmation)
                 invalid_argument_attempts += sum(invalid for _, invalid, _ in outcomes)
@@ -229,11 +239,12 @@ class Agent:
                 })
                 messages.extend(prompt_messages)
                 if prompt_messages and prompt_messages[-1]["role"] == "assistant":
-                    # GigaChat не принимает функции после завершающего сообщения assistant.
+                    # GigaChat отклоняет запрос с functions, если история заканчивается сообщением assistant.
+                    # Добавляем user-реплику, чтобы следующий вызов модели с инструментами был допустимым.
                     messages.append({
                         "role": "user",
                         "content": (
-                            "Выполни приведённые выше инструкции, "
+                            "Выполни приведенные выше инструкции, "
                             "используя доступные инструменты."
                         ),
                     })
@@ -290,6 +301,7 @@ class Agent:
 
     @staticmethod
     def _response_text(response) -> str:
+        """Объединяет текстовые части ассистентских сообщений ответа модели"""
         return "".join(
             part.text or ""
             for message in response.messages
@@ -299,6 +311,7 @@ class Agent:
 
     @staticmethod
     def _get_call_batches(response) -> list[tuple[Any, list[Any]]]:
+        """Группирует вызовы по сообщениям и проверяет уникальность их ID"""
         batches = []
         for message in response.messages:
             if message.role != "assistant":
@@ -319,6 +332,7 @@ class Agent:
         return batches
 
     def _needs_confirmation(self, function_call) -> bool:
+        """Проверяет требование подтверждения по MCP-аннотациям и конфигурации"""
         resolved = self.converter.resolve(function_call.name)
         if not resolved:
             return False
@@ -327,6 +341,7 @@ class Agent:
         return needs_confirm or tool_name in self.always_confirm_tools.get(server, set())
 
     async def _execute_one(self, function_call, confirmation) -> tuple[str, bool, bool]:
+        """Выполняет вызов и помечает ошибку аргументов или отказ пользователя"""
         try:
             result = await self._execute_function_call(function_call, confirmation)
             return result, False, False
@@ -340,6 +355,7 @@ class Agent:
             return result, False, True
 
     async def _execute_call_batch(self, calls, confirmation) -> list[tuple[str, bool, bool]]:
+        """Выполняет чтения параллельно, а подтверждаемые операции последовательно"""
         outcomes = []
         index = 0
         while index < len(calls):
@@ -373,6 +389,7 @@ class Agent:
         function_call,
         confirmation: ConfirmationProvider,
     ) -> str:
+        """Проверяет и выполняет вызов MCP, возвращая JSON-результат для истории"""
         prefixed_name = function_call.name
         raw_arguments = function_call.arguments
 
@@ -393,7 +410,7 @@ class Agent:
             return json.dumps({"error": f"Неизвестный инструмент: {prefixed_name}"}, ensure_ascii=False)
         server, tool_name = resolved
 
-         # Базовая проверка по аннотациям MCP (fail-safe)
+        # Базовая проверка по аннотациям MCP (fail-safe)
         needs_confirm, reason = self.converter.requires_confirmation(prefixed_name)
 
         # Дополнительная страховка из конфига:
@@ -439,7 +456,7 @@ class Agent:
                     "tool_result", server=server, tool=tool_name, result="prompt applied"
                 )
                 return json.dumps({
-                    "result": "MCP-промпт применён.",
+                    "result": "MCP-промпт применен.",
                     "_prompt_messages": prompt_messages,
                 }, ensure_ascii=False)
             else:
@@ -468,6 +485,7 @@ class Agent:
         confirmation: ConfirmationProvider,
         reason: str = "",
     ) -> bool:
+        """Запрашивает решение пользователя и записывает его в трассу"""
         if hasattr(confirmation, "confirm_with_reason"):
             approved = await confirmation.confirm_with_reason(tool_name, arguments, reason)
         else:
@@ -480,12 +498,13 @@ class Agent:
             return text
         return (
             f"{text[:self.max_tool_result_chars]}\n"
-            f"[Результат сокращён: показаны первые {self.max_tool_result_chars} "
+            f"[Результат сокращен: показаны первые {self.max_tool_result_chars} "
             f"из {len(text)} символов. Уточните запрос или уменьшите limit при поиске.]"
         )
 
     @staticmethod
     def _extract_text(result) -> str:
+        """Извлекает текстовые блоки и признак ошибки из результата MCP-инструмента"""
         is_error = getattr(result, "is_error", getattr(result, "isError", False))
         if is_error:
             return f"[Ошибка] {result.content[0].text if result.content else 'unknown'}"
@@ -497,6 +516,7 @@ class Agent:
 
     @staticmethod
     def _extract_resource_text(result) -> str:
+        """Извлекает и объединяет текстовое содержимое MCP-ресурса"""
         texts = [
             content.text
             for content in result.contents
