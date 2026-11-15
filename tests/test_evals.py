@@ -218,3 +218,122 @@ async def test_parallel_ticket_and_kb_accepts_both_read_methods(
     result = await run_scenario(FakeAgent(), scenario)
 
     assert result["success"], result["reasons"]
+
+
+
+@pytest.mark.anyio
+async def test_scenario_metrics_distinguish_check_types(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(conf, "DB_PATH", tmp_path / "evals.db")
+    init_eval_db()
+
+    class FakeAgent:
+        tracer = None
+        confirmation = None
+
+        async def run(self, user_input) -> str:
+            self.tracer.log("llm_response", tokens=7)
+            self.tracer.log("llm_response", tokens=5)
+            self.tracer.log("tool_call", tool="forbidden_tool", arguments={})
+            self.tracer.log("tool_result", tool="forbidden_tool", is_error=True)
+            return "неожиданный ответ"
+
+    scenario = {
+        "id": "separate_metrics",
+        "category": "write",
+        "severity": "critical",
+        "turns": [{"user": "Выполни действие"}],
+        "expect": {
+            "calls": [{"tool": "required_tool", "succeeded": True}],
+            "forbidden_tools": ["forbidden_tool"],
+            "confirmations": {"count": 1},
+            "answer": {"all": ["ожидаемый текст"]},
+            "db": {"unchanged_tickets": [1]},
+        },
+    }
+
+    result = await run_scenario(FakeAgent(), scenario)
+
+    assert not result["success"]
+    assert result["category"] == "write"
+    assert result["severity"] == "critical"
+    assert not result["required_calls_ok"]
+    assert result["forbidden_called"] == ["forbidden_tool"]
+    assert not result["confirmations_ok"]
+    assert not result["answer_ok"]
+    assert result["db_ok"]
+    assert result["successful_tool_calls"] == 0
+    assert result["total_tool_calls"] == 1
+    assert result["tokens"] == 12
+
+
+
+def test_print_results_includes_detailed_and_grouped_metrics(monkeypatch, capsys) -> None:
+    for name in ("DATA_DIR", "TRACE_DIR", "DB_PATH"):
+        monkeypatch.setenv(name, "unused-in-report-test")
+
+    from evals.run_evals import print_results
+
+    def run(success, category, severity, **overrides):
+        result = {
+            "success": success,
+            "category": category,
+            "severity": severity,
+            "latency": 1.0,
+            "steps": 1,
+            "tokens": 10,
+            "required_calls_ok": True,
+            "confirmations_ok": True,
+            "answer_ok": True,
+            "db_ok": True,
+            "successful_tool_calls": 0,
+            "total_tool_calls": 0,
+            "forbidden_called": [],
+        }
+        result.update(overrides)
+        return result
+
+    results = {
+        "stable_success": [
+            run(True, "read", "major", successful_tool_calls=2, total_tool_calls=2),
+            run(True, "read", "major", successful_tool_calls=2, total_tool_calls=2),
+        ],
+        "mixed": [
+            run(True, "write", "critical", successful_tool_calls=1, total_tool_calls=1),
+            run(
+                False,
+                "write",
+                "critical",
+                required_calls_ok=False,
+                confirmations_ok=False,
+                answer_ok=False,
+                db_ok=False,
+                successful_tool_calls=0,
+                total_tool_calls=1,
+                forbidden_called=["bad_tool"],
+            ),
+        ],
+        "stable_failure": [run(False, "safety", "minor")],
+    }
+
+    print_results(results, 3)
+    output = capsys.readouterr().out
+
+    assert "Доля успешных прогонов (Run Success Rate): 60.0%" in output
+    assert "Доля успешных сценариев (все прогоны успешны): 33.3% (1/3)" in output
+    assert "Правильные обязательные вызовы: 80.0% (4/5)" in output
+    assert "Прогоны без запрещённых вызовов: 80.0% (4/5)" in output
+    assert "Правильные подтверждения: 80.0% (4/5)" in output
+    assert "Корректный текст ответа: 80.0% (4/5)" in output
+    assert "Корректное состояние БД: 80.0% (4/5)" in output
+    assert "Доля успешных вызовов инструментов: 83.3% (5/6)" in output
+    assert "Стабильный успех (2/2)" in output
+    assert "Стабильный провал (0/1)" in output
+    assert "Нестабильно (1/2)" in output
+    assert "read: 100.0% (2/2)" in output
+    assert "write: 50.0% (1/2)" in output
+    assert "safety: 0.0% (0/1)" in output
+    assert "critical: 50.0% (1/2)" in output
+    assert "major: 100.0% (2/2)" in output
+    assert "minor: 0.0% (0/1)" in output
+    assert "Среднее число шагов агентного цикла" in output
+    assert "Средняя латентность выполнения сценария" in output

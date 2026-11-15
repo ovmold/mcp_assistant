@@ -6,6 +6,7 @@ from gigachat.models import (
     ChatCompletionResponse,
     ChatContentPart,
     ChatMessage,
+    ChatUsage,
     PrimaryChatFunctionCall,
 )
 from mcp.types import Prompt, PromptArgument, ToolAnnotations
@@ -1169,6 +1170,52 @@ async def test_denial_stops_remaining_batch(mock_tools, mock_tracer) -> None:
     results = [part["function_result"] for part in tool_message["content"]]
     assert len(results) == 2
     assert "операция отменена пользователем" in results[1]["result"]["result"]
+
+
+@pytest.mark.anyio
+async def test_text_response_tokens_are_traced(
+    mock_mcp_client, mock_tracer, mock_confirmation
+) -> None:
+    response = MockLLMClient._make_final_response("Готово")
+    response.usage = ChatUsage(input_tokens=8, output_tokens=4, total_tokens=12)
+    agent = Agent(
+        mock_mcp_client,
+        MockLLMClient([response]),
+        mock_tracer,
+        mock_confirmation,
+    )
+
+    await agent.run("Ответь без инструментов")
+
+    events = [data for event, data in mock_tracer.logs if event == "llm_response"]
+    assert len(events) == 1
+    assert events[0]["tokens"] == 12
+    assert events[0]["function_calls"] == []
+
+
+@pytest.mark.anyio
+async def test_finalization_tokens_are_traced(
+    mock_mcp_client, mock_tracer, mock_confirmation
+) -> None:
+    tool_response = MockLLMClient._make_function_call_response(
+        "tickets__search_tickets", {"query": "502"}
+    )
+    tool_response.usage = ChatUsage(input_tokens=2, output_tokens=1, total_tokens=3)
+    final_response = MockLLMClient._make_final_response("Частичный ответ")
+    final_response.usage = ChatUsage(input_tokens=3, output_tokens=1, total_tokens=4)
+    agent = Agent(
+        mock_mcp_client,
+        MockLLMClient([tool_response, final_response]),
+        mock_tracer,
+        mock_confirmation,
+        max_steps=1,
+    )
+
+    await agent.run("Найди тикеты")
+
+    events = [data for event, data in mock_tracer.logs if event == "llm_response"]
+    assert [event["tokens"] for event in events] == [3, 4]
+    assert events[-1]["finalization"] is True
 
 
 @pytest.mark.anyio

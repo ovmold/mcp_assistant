@@ -6,7 +6,6 @@ from mcp_assistant import config as conf
 from mcp_assistant.storage import schema as db
 
 SCENARIOS_FILE = Path(__file__).parent / "scenarios.yaml"
-EVALS_DB = "evals_tickets.db"
 
 SEED_TICKETS = [
     (1, "Ошибка 502 при оплате", "При попытке оплаты возникает 502 Bad Gateway",
@@ -31,17 +30,20 @@ SEED_TICKETS = [
      "open", "high", "Soylent Corp", "2026-10-12T10:00:00", "2026-10-15T12:00:00", "sync,mobile", "bug"),
 ]
 
-# Функция для пересоздания базы данных
 def init_eval_db() -> None:
+    """
+    Функция для пересоздания базы данных.
+    Вызывается перед каждым отдельным прогоном сценария.
+    """
     Path(conf.DB_PATH).parent.mkdir(parents=True, exist_ok=True)
 
-    # Удаляем старые файлы базы (включая WAL и SHM журналы SQLite)
+    # Удаляет старые файлы базы (включая WAL и SHM журналы SQLite)
     for suffix in ["", "-wal", "-shm"]:
         p = str(conf.DB_PATH) + suffix
         if os.path.exists(p):
             os.remove(p)
             
-    # Создаем заново и наполняем данными
+    # Создает БД заново и наполняет данными
     conn = sqlite3.connect(conf.DB_PATH)
     try:
         conn.executescript(db.SCHEMA)
@@ -57,6 +59,7 @@ def init_eval_db() -> None:
 
 
 def configure_eval_tickets_server(config: dict) -> None:
+    """ Настройка MCP-сервера (stdio) """
     for server in config["servers"]:
         transport = server.get("transport", {})
         if server.get("name") != "tickets" or transport.get("type") != "stdio":

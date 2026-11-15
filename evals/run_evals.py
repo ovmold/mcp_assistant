@@ -102,8 +102,8 @@ async def main() -> None:
                         max_steps=config.get("max_steps", 8),
                         always_confirm_tools=always_confirm_tools,
                         max_history_messages=config.get("max_history_messages", 40),
-                        max_history_chars=config.get("max_history_chars", 60_000),
-                        max_tool_result_chars=config.get("max_tool_result_chars", 12_000),
+                        max_history_chars=config.get("max_history_chars", 60000),
+                        max_tool_result_chars=config.get("max_tool_result_chars", 12000),
                     )
                     result = await run_scenario(agent, scenario)
                     results_by_scenario[scenario_id].append(result)
@@ -139,6 +139,7 @@ async def main() -> None:
 
 
 def print_results(results_by_scenario: dict, runs_count: int) -> None:
+    """Печатает результаты сценариев и сводные метрики по прогонам и группам."""
     print("\n" + "=" * 105)
     print("ИТОГОВЫЙ ОТЧЕТ")
     print("=" * 105)
@@ -148,10 +149,13 @@ def print_results(results_by_scenario: dict, runs_count: int) -> None:
     total_latency = 0.0
     total_steps = 0
     total_tokens = 0
-    stable_count = 0
+    stable_success_count = 0
+    stable_failure_count = 0
+    unstable_count = 0
+    successful_scenarios = 0
     total_scenarios = len(results_by_scenario)
 
-    print(f"{'Сценарий':<25} | {'Успех':<7} | {'Стабильность':<15} | {'Шаги':<5} | {'Время(с)':<8} | {'Токены':<6}")
+    print(f"{'Сценарий':<25} | {'Успех':<7} | {'Стабильность':<22} | {'Шаги':<5} | {'Время(с)':<8} | {'Токены':<6}")
     print("-" * 105)
 
     for scenario_id, runs in results_by_scenario.items():
@@ -159,19 +163,26 @@ def print_results(results_by_scenario: dict, runs_count: int) -> None:
         if actual_runs == 0:
             continue
 
+        # Полный успех, полный провал и смешанные результаты различаются отдельно.
         success_count = sum(1 for run in runs if run["success"])
+        if success_count == actual_runs:
+            successful_scenarios += 1
+            stable_success_count += 1
+            stability = f"Стабильный успех ({success_count}/{actual_runs})"
+        elif success_count == 0:
+            stable_failure_count += 1
+            stability = f"Стабильный провал ({success_count}/{actual_runs})"
+        else:
+            unstable_count += 1
+            stability = f"Нестабильно ({success_count}/{actual_runs})"
+
+        # Средние показатели рассчитываются по фактическим прогонам сценария.
         avg_latency = sum(run["latency"] for run in runs) / actual_runs
         avg_steps = sum(run["steps"] for run in runs) / actual_runs
         avg_tokens = sum(run["tokens"] for run in runs) / actual_runs
+        print(f"{scenario_id:<25} | {f'{success_count}/{actual_runs}':<7} | {stability:<22} | {avg_steps:<5.1f} | {avg_latency:<8.2f} | {avg_tokens:<6.0f}")
 
-        if success_count in (0, actual_runs):
-            stability = f"Стабильно ({success_count}/{actual_runs})"
-            stable_count += 1
-        else:
-            stability = f"Флаки ({success_count}/{actual_runs})"
-
-        print(f"{scenario_id:<25} | {f'{success_count}/{actual_runs}':<7} | {stability:<15} | {avg_steps:<5.1f} | {avg_latency:<8.2f} | {avg_tokens:<6.0f}")
-
+        # Умножение на actual_runs возвращает суммы для общих средних по всем прогонам.
         total_runs += actual_runs
         total_success += success_count
         total_latency += avg_latency * actual_runs
@@ -183,19 +194,63 @@ def print_results(results_by_scenario: dict, runs_count: int) -> None:
         print("Нет данных для отображения.")
         return
 
-    tool_accuracy = sum(
-        1
-        for runs in results_by_scenario.values()
-        for run in runs
-        if not run["missing_tools"] and not run["forbidden_called"]
-    )
+    # Cписок всех прогонов используется для общих и групповых процентов.
+    all_runs = [run for runs in results_by_scenario.values() for run in runs]
     print(f"Всего сценариев: {total_scenarios} (прогонов: {total_runs})")
-    print(f"Общая доля успешных сценариев (Success Rate): {total_success / total_runs * 100:.1f}%")
-    print(f"Точность выбора инструментов (без запрещенных): {tool_accuracy / total_runs * 100:.1f}%")
-    print(f"Среднее число шагов: {total_steps / total_runs:.1f}")
-    print(f"Средняя латентность: {total_latency / total_runs:.2f} сек")
+    print(f"Доля успешных прогонов (Run Success Rate): {total_success / total_runs * 100:.1f}%")
+    print(
+        f"Доля успешных сценариев (все прогоны успешны): "
+        f"{successful_scenarios / total_scenarios * 100:.1f}% "
+        f"({successful_scenarios}/{total_scenarios})"
+    )
+
+    # Каждая доля — число прогонов, прошедших конкретную проверку, к общему числу прогонов.
+    check_metrics = [
+        ("Правильные обязательные вызовы", sum(run["required_calls_ok"] for run in all_runs)),
+        ("Прогоны без запрещённых вызовов", sum(not run["forbidden_called"] for run in all_runs)),
+        ("Правильные подтверждения", sum(run["confirmations_ok"] for run in all_runs)),
+        ("Корректный текст ответа", sum(run["answer_ok"] for run in all_runs)),
+        ("Корректное состояние БД", sum(run["db_ok"] for run in all_runs)),
+    ]
+    for label, passed in check_metrics:
+        print(f"{label}: {passed / total_runs * 100:.1f}% ({passed}/{total_runs})")
+
+    # Успешные вызовы инструментов / Общее кол-во вызовов инструментов
+    successful_tool_calls = sum(run["successful_tool_calls"] for run in all_runs)
+    total_tool_calls = sum(run["total_tool_calls"] for run in all_runs)
+    if total_tool_calls:
+        print(
+            f"Доля успешных вызовов инструментов: "
+            f"{successful_tool_calls / total_tool_calls * 100:.1f}% "
+            f"({successful_tool_calls}/{total_tool_calls})"
+        )
+    else:
+        print("Доля успешных вызовов инструментов: нет вызовов")
+
+    def print_group_success(field: str, title: str, order: tuple[str, ...]) -> None:
+        """Выводит долю успешных прогонов по значениям поля в заданном порядке."""
+        print(f"\n{title}")
+        for group in order:
+            # В группу попадают все прогоны с текущим category или severity.
+            group_runs = [run for run in all_runs if run[field] == group]
+            if not group_runs:
+                continue
+            passed = sum(run["success"] for run in group_runs)
+            print(
+                f"  {group}: {passed / len(group_runs) * 100:.1f}% "
+                f"({passed}/{len(group_runs)})"
+            )
+
+    print_group_success("category", "Run Success Rate по category", ("read", "write", "safety", "robustness"))
+    print_group_success("severity", "Run Success Rate по severity", ("critical", "major", "minor"))
+
+    print(f"\nСреднее число шагов агентного цикла: {total_steps / total_runs:.1f}")
+    print(f"Средняя латентность выполнения сценария: {total_latency / total_runs:.2f} сек")
     print(f"Средний расход токенов: {total_tokens / total_runs:.0f}")
-    print(f"Стабильных сценариев (без флаков): {stable_count} из {total_scenarios}")
+    print(
+        f"Стабильность сценариев: успех — {stable_success_count}, "
+        f"провал — {stable_failure_count}, нестабильно — {unstable_count}"
+    )
 
 
 if __name__ == "__main__":

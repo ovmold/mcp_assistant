@@ -193,13 +193,6 @@ class Agent:
 
             # Извлечение вызовов инструментов
             batches = self._get_call_batches(response)
-            if not batches:
-                final = self._response_text(response)
-                messages.append({"role": "assistant", "content": final})
-                self.tracer.log("final_answer", content=final, step=step, session_id=session_id)
-                self._trim(session_id)
-                return final
-
             calls = [call for _, batch_calls in batches for call in batch_calls]
             self.tracer.log(
                 "llm_response",
@@ -209,8 +202,16 @@ class Agent:
                     for call in calls
                 ],
                 tokens=response.usage.total_tokens if getattr(response, "usage", None) else 0,
+                step=step,
                 session_id=session_id,
             )
+            if not batches:
+                final = self._response_text(response)
+                messages.append({"role": "assistant", "content": final})
+                self.tracer.log("final_answer", content=final, step=step, session_id=session_id)
+                self._trim(session_id)
+                return final
+
             messages.extend(
                 message.model_dump(mode="python", by_alias=True, exclude_none=True)
                 for message in response.messages
@@ -281,7 +282,21 @@ class Agent:
         ]
         try:
             response = await self.llm.chat(final_messages, functions=None)
-            if self._get_call_batches(response):
+            batches = self._get_call_batches(response)
+            calls = [call for _, batch_calls in batches for call in batch_calls]
+            self.tracer.log(
+                "llm_response",
+                content=self._response_text(response),
+                function_calls=[
+                    {"id": call.id_, "name": call.name, "arguments": call.arguments}
+                    for call in calls
+                ],
+                tokens=response.usage.total_tokens if getattr(response, "usage", None) else 0,
+                step=self.max_steps,
+                finalization=True,
+                session_id=session_id,
+            )
+            if batches:
                 raise ValueError("Модель запросила инструмент во время финализации")
             final = self._response_text(response)
             if not final:

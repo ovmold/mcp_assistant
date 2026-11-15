@@ -7,19 +7,25 @@ from mcp_assistant import config as conf
 
 
 class EvalTracer:
+    """Хранит события агента в памяти для проверок сценария."""
     def __init__(self) -> None:
+        """Создаёт пустой журнал событий."""
         self.events = []
 
     def log(self, event_type: str, **data) -> None:
+        """Добавляет событие с типом и данными в журнал."""
         self.events.append((event_type, data))
 
 
 class EvalConfirmation:
+    """Возвращает заранее заданные ответы на запросы подтверждения."""
     def __init__(self, responses=None) -> None:
+        """Сохраняет ответы и устанавливает индекс первого ответа."""
         self.responses = responses or []
         self.index = 0
 
     async def confirm(self, tool_name: str, arguments: dict) -> bool:
+        """Возвращает следующий ответ или отказ при его отсутствии."""
         if self.index >= len(self.responses):
             return False
         response = str(self.responses[self.index]).lower()
@@ -28,6 +34,7 @@ class EvalConfirmation:
 
 
 def validate_scenarios(scenarios: list[dict]) -> None:
+    """Проверяет обязательные поля, уникальность ID и допустимые значения сценариев."""
     if not isinstance(scenarios, list):
         raise ValueError("Файл evals должен содержать список сценариев")
 
@@ -55,6 +62,7 @@ def validate_scenarios(scenarios: list[dict]) -> None:
 
 
 def apply_setup(scenario: dict) -> None:
+    """Применяет начальные изменения тикетов из setup сценария."""
     setup = scenario.get("setup", {})
     tickets = setup.get("tickets", {})
     if not tickets:
@@ -78,6 +86,7 @@ def apply_setup(scenario: dict) -> None:
 
 
 def _snapshot_db() -> dict:
+    """Сохраняет исходные строки тикетов и максимальный ID сообщения."""
     with closing(sqlite3.connect(conf.DB_PATH)) as conn:
         conn.row_factory = sqlite3.Row
         tickets = {
@@ -91,6 +100,7 @@ def _snapshot_db() -> dict:
 
 
 def _args_match(expected: dict, actual: dict) -> bool:
+    """Проверяет, что фактические аргументы содержат ожидаемые значения."""
     for key, value in expected.items():
         if key not in actual:
             return False
@@ -103,6 +113,7 @@ def _args_match(expected: dict, actual: dict) -> bool:
 
 
 def _collect_calls(tracer: EvalTracer) -> list[dict]:
+    """Собирает вызовы инструментов и сопоставляет им результаты из трассы."""
     calls = [
         {
             "tool": data["tool"],
@@ -116,6 +127,7 @@ def _collect_calls(tracer: EvalTracer) -> list[dict]:
     ]
 
     def mark_result(data, succeeded) -> None:
+        """Записывает исход и результат в первый вызов без результата."""
         for call in calls:
             if call["tool"] == data["tool"] and call["succeeded"] is None:
                 call["succeeded"] = succeeded
@@ -132,6 +144,7 @@ def _collect_calls(tracer: EvalTracer) -> list[dict]:
 
 
 def _evaluate_call(expected: dict, actual_calls: list[dict]) -> list[str]:
+    """Проверяет наличие и исход одного ожидаемого вызова."""
     tool = expected["tool"]
     matching = [
         call for call in actual_calls
@@ -147,6 +160,7 @@ def _evaluate_call(expected: dict, actual_calls: list[dict]) -> list[str]:
 
 
 def _evaluate_calls(expect: dict, actual_calls: list[dict]) -> list[str]:
+    """Проверяет обязательные вызовы и допустимые альтернативы."""
     reasons = []
     for expected in expect.get("calls", []):
         alternatives = expected.get("any_of", [expected])
@@ -158,14 +172,20 @@ def _evaluate_calls(expect: dict, actual_calls: list[dict]) -> list[str]:
             reasons.append(
                 f"Не найден ни один допустимый вызов: {alternatives}"
             )
-
-    for tool in expect.get("forbidden_tools", []):
-        if any(call["tool"] == tool for call in actual_calls):
-            reasons.append(f"Выполнен запрещённый инструмент: {tool}")
     return reasons
 
 
+def _evaluate_forbidden_calls(expect: dict, actual_calls: list[dict]) -> list[str]:
+    """Возвращает ошибки для фактически выполненных запрещённых вызовов."""
+    return [
+        f"Выполнен запрещённый инструмент: {tool}"
+        for tool in expect.get("forbidden_tools", [])
+        if any(call["tool"] == tool for call in actual_calls)
+    ]
+
+
 def _batch_matches(expected: dict, batch: list[dict]) -> bool:
+    """Проверяет состав и параллельность пакета вызовов."""
     expected_tools = Counter(expected["tools"])
     actual_tools = Counter(call["name"].split("__", 1)[-1] for call in batch)
     if not all(actual_tools[tool] >= count for tool, count in expected_tools.items()):
@@ -174,6 +194,7 @@ def _batch_matches(expected: dict, batch: list[dict]) -> bool:
 
 
 def _evaluate_batches(expect: dict, tracer: EvalTracer) -> list[str]:
+    """Проверяет наличие ожидаемых пакетов в событиях LLM."""
     actual_batches = [
         data.get("function_calls", [])
         for event, data in tracer.events
@@ -196,6 +217,7 @@ def _evaluate_batches(expect: dict, tracer: EvalTracer) -> list[str]:
 
 
 def _evaluate_confirmations(expect: dict, tracer: EvalTracer) -> list[str]:
+    """Сравнивает запрошенные подтверждения с ожиданиями сценария."""
     requested = [
         data["tool"]
         for event, data in tracer.events
@@ -214,6 +236,7 @@ def _evaluate_confirmations(expect: dict, tracer: EvalTracer) -> list[str]:
 
 
 def _evaluate_answer(expect: dict, answer: str) -> list[str]:
+    """Проверяет обязательные, допустимые и запрещенные строки ответа."""
     rules = expect.get("answer", {})
     text = answer.casefold()
     reasons = []
@@ -229,6 +252,7 @@ def _evaluate_answer(expect: dict, answer: str) -> list[str]:
 
 
 def _evaluate_db(expect: dict, baseline: dict) -> list[str]:
+    """Сравнивает итоговое состояние БД с ожиданиями и исходным снимком."""
     expected = expect.get("db", {})
     if not expected:
         return []
@@ -274,6 +298,7 @@ def _evaluate_db(expect: dict, baseline: dict) -> list[str]:
 
 
 async def run_scenario(agent, scenario: dict) -> dict:
+    """Выполняет ходы сценария и возвращает результаты всех проверок и метрик."""
     tracer = EvalTracer()
     agent.tracer = tracer
     baseline = _snapshot_db()
@@ -288,17 +313,38 @@ async def run_scenario(agent, scenario: dict) -> dict:
         except Exception as e:
             errors.append(f"{type(e).__name__}: {e}")
             break
+    # Длительность выполнения сценария 
     latency = time.perf_counter() - start_time
 
+    # Извлекается секция expect сценария
     expect = scenario.get("expect", {})
+    #  Собирает фактических вызовов
     actual_calls = _collect_calls(tracer)
-    reasons = [*errors]
-    reasons.extend(_evaluate_calls(expect, actual_calls))
-    reasons.extend(_evaluate_batches(expect, tracer))
-    reasons.extend(_evaluate_confirmations(expect, tracer))
-    reasons.extend(_evaluate_answer(expect, final_answer))
-    reasons.extend(_evaluate_db(expect, baseline))
+    # Проверяет обязательные вызовы
+    call_reasons = _evaluate_calls(expect, actual_calls)
+    # Проверяет ожидаемые пакеты вызовов
+    batch_reasons = _evaluate_batches(expect, tracer)
+    # Проверяет, не выполнял ли агент инструменты из forbidden
+    forbidden_reasons = _evaluate_forbidden_calls(expect, actual_calls)
+    # Проверяет точное количество запросов подтверждения и
+    # наличие подтверждения для указанных инструментов
+    confirmation_reasons = _evaluate_confirmations(expect, tracer)
+    # Проверяет текст конечного ответа
+    answer_reasons = _evaluate_answer(expect, final_answer)
+    # Сравнивает итоговую БД с ожиданиями
+    db_reasons = _evaluate_db(expect, baseline)
+    # Причины провала
+    reasons = [
+        *errors,
+        *call_reasons,
+        *batch_reasons,
+        *forbidden_reasons,
+        *confirmation_reasons,
+        *answer_reasons,
+        *db_reasons,
+    ]
 
+    # Проверяет, задано ли в сценарии ограничение на число шагов
     if "max_steps" in expect:
         steps = max((data.get("step", 0) for _, data in tracer.events), default=0)
         if steps > expect["max_steps"]:
@@ -306,11 +352,14 @@ async def run_scenario(agent, scenario: dict) -> dict:
     else:
         steps = max((data.get("step", 0) for _, data in tracer.events), default=0)
 
+    # Подсчет токенов
     tokens = sum(
         data.get("tokens", 0)
         for event, data in tracer.events
         if event == "llm_response"
     )
+
+    # Список отклоненных операций
     denied = [
         data["tool"]
         for event, data in tracer.events
@@ -319,6 +368,8 @@ async def run_scenario(agent, scenario: dict) -> dict:
 
     return {
         "success": not reasons,
+        "category": scenario["category"],
+        "severity": scenario["severity"],
         "latency": latency,
         "steps": steps,
         "tokens": tokens,
@@ -326,6 +377,14 @@ async def run_scenario(agent, scenario: dict) -> dict:
         "final_answer": final_answer,
         "tool_calls": [call["tool"] for call in actual_calls],
         "call_details": actual_calls,
+        "required_calls_ok": not errors and not call_reasons and not batch_reasons,
+        "confirmations_ok": not errors and not confirmation_reasons,
+        "answer_ok": not errors and not answer_reasons,
+        "db_ok": not errors and not db_reasons,
+        "successful_tool_calls": sum(
+            call["succeeded"] is True for call in actual_calls
+        ),
+        "total_tool_calls": len(actual_calls),
         "confirmation_asked": [
             data["tool"]
             for event, data in tracer.events
@@ -333,7 +392,6 @@ async def run_scenario(agent, scenario: dict) -> dict:
         ],
         "confirmation_denied": denied,
         "events": tracer.events,
-        "missing_tools": [],
         "forbidden_called": [
             tool for tool in expect.get("forbidden_tools", [])
             if tool in [call["tool"] for call in actual_calls]
