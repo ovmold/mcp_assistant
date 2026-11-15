@@ -229,6 +229,15 @@ def print_results(results_by_scenario: dict, runs_count: int) -> None:
 
     def print_group_success(field: str, title: str, order: tuple[str, ...]) -> None:
         """Выводит долю успешных прогонов по значениям поля в заданном порядке."""
+        labels = {
+            "read": "чтение (read)",
+            "write": "запись (write)",
+            "safety": "безопасность (safety)",
+            "robustness": "устойчивость (robustness)",
+            "critical": "критические (critical)",
+            "major": "значительные (major)",
+            "minor": "незначительные (minor)",
+        }
         print(f"\n{title}")
         for group in order:
             # В группу попадают все прогоны с текущим category или severity.
@@ -237,12 +246,12 @@ def print_results(results_by_scenario: dict, runs_count: int) -> None:
                 continue
             passed = sum(run["success"] for run in group_runs)
             print(
-                f"  {group}: {passed / len(group_runs) * 100:.1f}% "
+                f"  {labels.get(group, group)}: {passed / len(group_runs) * 100:.1f}% "
                 f"({passed}/{len(group_runs)})"
             )
 
-    print_group_success("category", "Run Success Rate по category", ("read", "write", "safety", "robustness"))
-    print_group_success("severity", "Run Success Rate по severity", ("critical", "major", "minor"))
+    print_group_success("category", "Доля успешных прогонов по категориям", ("read", "write", "safety", "robustness"))
+    print_group_success("severity", "Доля успешных прогонов по критичности", ("critical", "major", "minor"))
 
     print(f"\nСреднее число шагов агентного цикла: {total_steps / total_runs:.1f}")
     print(f"Средняя латентность выполнения сценария: {total_latency / total_runs:.2f} сек")

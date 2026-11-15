@@ -329,11 +329,14 @@ def test_print_results_includes_detailed_and_grouped_metrics(monkeypatch, capsys
     assert "Стабильный успех (2/2)" in output
     assert "Стабильный провал (0/1)" in output
     assert "Нестабильно (1/2)" in output
-    assert "read: 100.0% (2/2)" in output
-    assert "write: 50.0% (1/2)" in output
-    assert "safety: 0.0% (0/1)" in output
-    assert "critical: 50.0% (1/2)" in output
-    assert "major: 100.0% (2/2)" in output
-    assert "minor: 0.0% (0/1)" in output
+    assert "Доля успешных прогонов по категориям" in output
+    assert "Доля успешных прогонов по критичности" in output
+    assert "чтение (read): 100.0% (2/2)" in output
+    assert "запись (write): 50.0% (1/2)" in output
+    assert "безопасность (safety): 0.0% (0/1)" in output
+    assert "устойчивость (robustness)" not in output
+    assert "критические (critical): 50.0% (1/2)" in output
+    assert "значительные (major): 100.0% (2/2)" in output
+    assert "незначительные (minor): 0.0% (0/1)" in output
     assert "Среднее число шагов агентного цикла" in output
     assert "Средняя латентность выполнения сценария" in output
