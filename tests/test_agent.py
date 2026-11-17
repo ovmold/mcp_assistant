@@ -90,13 +90,14 @@ class MockMCPClient:
         )
 
 
-class MockLLMClient(GigaChatLLMClient):
-    """Заглушка для LLM-клиента, возвращающая заранее заданные ответы."""
+class MockLLMClient:
+    """Самостоятельная реализация ChatLLM с заранее заданными ответами."""
     def __init__(self, responses: list) -> None:
         self.responses = responses
         self.call_count = 0
         self.history: list[list[dict]] = []
         self.functions_history: list[list[dict] | None] = []
+        self.closed = False
 
     async def chat(self, messages, functions=None) -> ChatCompletionResponse:
         self.history.append([dict(m) for m in messages])
@@ -106,6 +107,9 @@ class MockLLMClient(GigaChatLLMClient):
         resp = self.responses[self.call_count]
         self.call_count += 1
         return resp
+
+    def close(self) -> None:
+        self.closed = True
 
     @staticmethod
     def _make_final_response(content: str) -> ChatCompletionResponse:

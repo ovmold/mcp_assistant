@@ -302,3 +302,86 @@ async def test_agent_completes_openai_tool_round_trip() -> None:
     tool_message = second_request["messages"][-1]
     assert tool_message["tool_call_id"] == "call-1"
     assert "&quot;id&quot;: 1" in tool_message["content"]
+
+
+
+@pytest.mark.anyio
+async def test_gigachat_chat_without_functions() -> None:
+    captured = {}
+
+    def create(request):
+        captured["request"] = request
+        return "response"
+
+    sdk = SimpleNamespace(chat=SimpleNamespace(create=create))
+    client = GigaChatLLMClient(sdk, "giga-test")
+
+    result = await client.chat([{"role": "user", "content": "Привет"}])
+
+    assert result == "response"
+    assert captured["request"].tools is None
+    assert captured["request"].model_options.parallel_tool_calls is True
+
+
+def test_openai_history_preserves_plain_assistant_content() -> None:
+    converted = OpenAILLMClient._to_openai_messages([
+        {"role": "assistant", "content": "Обычный ответ"},
+        {"role": "assistant", "content": [{"text": "Только текст"}]},
+        {"role": "tool", "content": None},
+    ])
+
+    assert converted == [
+        {"role": "assistant", "content": "Обычный ответ"},
+        {"role": "assistant", "content": "Только текст"},
+    ]
+
+
+def test_openai_response_without_content_and_usage() -> None:
+    response = make_openai_response()
+    response.usage = None
+
+    converted = OpenAILLMClient._from_openai_response(response)
+
+    assert converted.usage is None
+    assert converted.messages[0].content is None
+    assert converted.messages[0].tools_state_id is None
+
+
+def test_create_llm_requires_model(monkeypatch) -> None:
+    monkeypatch.delenv("MODEL", raising=False)
+
+    with pytest.raises(ValueError, match="MODEL"):
+        create_llm(timeout=10)
+
+
+def test_gigachat_requires_auth_key(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "gigachat")
+    monkeypatch.setenv("MODEL", "giga-test")
+    monkeypatch.delenv("GIGACHAT_AUTH_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="GIGACHAT_AUTH_KEY"):
+        create_llm(timeout=10)
+
+
+def test_gigachat_requires_base_url(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "gigachat")
+    monkeypatch.setenv("MODEL", "giga-test")
+    monkeypatch.setenv("GIGACHAT_AUTH_KEY", "secret")
+    monkeypatch.delenv("GIGACHAT_BASE_URL", raising=False)
+
+    with pytest.raises(ValueError, match="GIGACHAT_BASE_URL"):
+        create_llm(timeout=10)
+
+
+def test_create_llm_openai_without_base_url(monkeypatch) -> None:
+    FakeOpenAI.instances = []
+    monkeypatch.setattr(llm_module, "OpenAI", FakeOpenAI)
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("MODEL", "gpt-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "secret")
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+
+    client = create_llm(timeout=42)
+
+    assert isinstance(client, OpenAILLMClient)
+    assert FakeOpenAI.instances[0].kwargs == {"api_key": "secret", "timeout": 42}

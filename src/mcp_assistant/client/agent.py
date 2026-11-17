@@ -245,7 +245,7 @@ class Agent:
                     messages.append({
                         "role": "user",
                         "content": (
-                            "Выполни приведенные выше инструкции, "
+                            "Выполни приведённые выше инструкции, "
                             "используя доступные инструменты."
                         ),
                     })
@@ -513,7 +513,7 @@ class Agent:
             return text
         return (
             f"{text[:self.max_tool_result_chars]}\n"
-            f"[Результат сокращен: показаны первые {self.max_tool_result_chars} "
+            f"[Результат сокращён: показаны первые {self.max_tool_result_chars} "
             f"из {len(text)} символов. Уточните запрос или уменьшите limit при поиске.]"
         )
 
