@@ -18,4 +18,6 @@ data
 # VS Code
 .vscode
 
+.kimi-code
+
 *.mp4
