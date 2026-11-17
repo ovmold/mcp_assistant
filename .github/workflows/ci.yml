@@ -34,3 +34,64 @@ jobs:
        with:
          name: coverage-report
          path: coverage-report.txt
+ evals:
+   if: github.event_name == 'workflow_dispatch'
+   runs-on: ubuntu-latest
+   timeout-minutes: 45
+
+   env:
+     LLM_PROVIDER: gigachat
+     MODEL: GigaChat-3-Ultra
+     GIGACHAT_BASE_URL: https://api.giga.chat/v1
+     GIGACHAT_AUTH_KEY: ${{ secrets.GIGACHAT_AUTH_KEY }}
+
+   steps:
+     - name: Checkout
+       uses: actions/checkout@v4
+
+     - name: Install uv
+       uses: astral-sh/setup-uv@v6
+
+     - name: Install dependencies
+       run: uv sync --frozen --dev
+
+     - name: Cache Hugging Face models
+       uses: actions/cache@v4
+       with:
+         path: ~/.cache/huggingface
+         key: ${{ runner.os }}-huggingface-${{ hashFiles('uv.lock') }}
+         restore-keys: |
+           ${{ runner.os }}-huggingface-
+
+     - name: Start knowledge server
+       run: |
+         uv run python -X utf8 -m mcp_assistant.servers.knowledge &
+         echo $! > knowledge.pid
+
+     - name: Wait for knowledge server
+       run: |
+         for attempt in {1..60}; do
+           if curl -sS --max-time 2 http://127.0.0.1:8000/mcp > /dev/null; then
+             echo "Knowledge server is ready"
+             exit 0
+           fi
+           sleep 2
+         done
+
+         echo "Knowledge server did not start"
+         exit 1
+
+     - name: Run evals
+       run: uv run python -X utf8 evals/run_evals.py --runs 1 | tee EVALS.md
+
+     - name: Upload eval report
+       if: always()
+       uses: actions/upload-artifact@v4
+       with:
+         name: evals-report
+         path: EVALS.md
+         if-no-files-found: ignore
+
+     - name: Stop knowledge server
+       if: always()
+       run: kill "$(cat knowledge.pid)" 2>/dev/null || true
