@@ -227,6 +227,10 @@ def mock_system_prompt(monkeypatch) -> None:
 # ============================================================================
 
 
+# ============================================================================
+# ОСНОВНОЙ ЦИКЛ И ОБРАБОТКА ОШИБОК
+# ============================================================================
+
 def test_system_prompt_requires_explicit_comment_author() -> None:
     prompt = agent_prompts.SYSTEM_PROMPT_TEMPLATE.casefold()
 
@@ -425,6 +429,10 @@ async def test_tool_timeout_error_has_no_hardcoded_duration(mock_tracer, mock_co
     assert "превышен таймаут ожидания инструмента" in error
     assert "60 сек" not in error
 
+
+# ============================================================================
+# ПОДТВЕРЖДЕНИЯ ОПЕРАЦИЙ
+# ============================================================================
 
 @pytest.mark.anyio
 async def test_readonly_tool_no_confirmation(mock_mcp_client, mock_tracer) -> None:
@@ -767,6 +775,10 @@ async def test_cli_confirmation_shows_reason_in_prompt() -> None:
     )
 
 
+# ============================================================================
+# ИСТОРИЯ ДИАЛОГА И СЕССИИ
+# ============================================================================
+
 @pytest.mark.anyio
 async def test_agent_remembers_previous_turn(mock_mcp_client, mock_tracer, mock_confirmation) -> None:
     """Второй run() видит историю первого."""
@@ -917,6 +929,10 @@ async def test_run_appends_max_steps_message_to_history(mock_mcp_client, mock_tr
     assert agent.get_history()[-1] == {"role": "assistant", "content": result}
 
 
+# ============================================================================
+# ОГРАНИЧЕНИЕ РАЗМЕРА ИСТОРИИ И РЕЗУЛЬТАТОВ ИНСТРУМЕНТОВ
+# ============================================================================
+
 @pytest.mark.anyio
 async def test_history_trimmed_removes_oldest_turns(mock_mcp_client, mock_tracer, mock_confirmation) -> None:
     """Старые ходы вытесняются, свежие остаются, system — всегда первый."""
@@ -1062,6 +1078,10 @@ async def test_history_trim_preserves_function_call_pairs(
             assert [call["name"] for call in calls] == [result["name"] for result in results]
 
 
+# ============================================================================
+# ПАРАЛЛЕЛЬНЫЕ ВЫЗОВЫ ИНСТРУМЕНТОВ
+# ============================================================================
+
 class TrackingMCPClient(MockMCPClient):
     def __init__(self, tools, synchronize=False) -> None:
         super().__init__(tools)
@@ -1176,6 +1196,10 @@ async def test_denial_stops_remaining_batch(mock_tools, mock_tracer) -> None:
     assert "операция отменена пользователем" in results[1]["result"]["result"]
 
 
+# ============================================================================
+# ТРАССИРОВКА ТОКЕНОВ И ФИНАЛИЗАЦИЯ ПОСЛЕ ЛИМИТА ШАГОВ
+# ============================================================================
+
 @pytest.mark.anyio
 async def test_text_response_tokens_are_traced(
     mock_mcp_client, mock_tracer, mock_confirmation
@@ -1275,6 +1299,10 @@ async def test_finalization_error_returns_limit_message(
     )
 
 
+# ============================================================================
+# ЭКРАНИРОВАНИЕ РЕЗУЛЬТАТОВ ИНСТРУМЕНТОВ
+# ============================================================================
+
 def test_wrap_tool_result_escapes_embedded_markup() -> None:
     wrapped = wrap_tool_result(
         "tickets",
@@ -1286,6 +1314,10 @@ def test_wrap_tool_result_escapes_embedded_markup() -> None:
     assert "&lt;/tool_result&gt;" in wrapped
     assert "&lt;system&gt;A &amp; B&lt;/system&gt;" in wrapped
 
+
+# ============================================================================
+# MCP-РЕСУРСЫ И ПРОМПТЫ
+# ============================================================================
 
 class CapabilityMCPClient(MockMCPClient):
     def __init__(self, tools) -> None:
