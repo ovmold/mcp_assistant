@@ -57,6 +57,7 @@ class ResettableAgent:
 
 @pytest.mark.anyio
 async def test_cancelled_request_does_not_block_next_message() -> None:
+    """Проверяет, что отмена HTTP-обработчика не отменяет задачу агента и не блокирует следующий запрос."""
     agent = CancellableAgent()
     demo = build_gradio_ui(agent)
     respond = get_handler(demo, "respond")
@@ -81,6 +82,7 @@ async def test_cancelled_request_does_not_block_next_message() -> None:
 
 
 def test_clear_chat_removes_session_state() -> None:
+    """Проверяет удаление состояния сессии и истории при очистке чата."""
     agent = ResettableAgent()
     demo = build_gradio_ui(agent)
     clear_chat = get_handler(demo, "clear_chat")
@@ -99,6 +101,7 @@ def test_clear_chat_removes_session_state() -> None:
 
 @pytest.mark.anyio
 async def test_expired_session_is_reset_before_new_request() -> None:
+    """Проверяет удаление просроченной сессии перед новым сообщением."""
     agent = ResettableAgent()
     demo = build_gradio_ui(agent, session_timeout=10.0)
     respond = get_handler(demo, "respond")
@@ -121,6 +124,7 @@ async def test_expired_session_is_reset_before_new_request() -> None:
 
 @pytest.mark.anyio
 async def test_respond_ignores_blank_message() -> None:
+    """Проверяет, что respond() не запускает агента для пустого сообщения."""
     demo = build_gradio_ui(ResettableAgent())
     respond = get_handler(demo, "respond")
 
@@ -132,6 +136,7 @@ async def test_respond_ignores_blank_message() -> None:
 
 @pytest.mark.anyio
 async def test_respond_rejects_parallel_request_in_same_session() -> None:
+    """Проверяет запрет второй задачи, пока текущая сессия занята."""
     agent = ResettableAgent()
     demo = build_gradio_ui(agent)
     respond = get_handler(demo, "respond")
@@ -156,6 +161,7 @@ async def test_respond_rejects_parallel_request_in_same_session() -> None:
 
 @pytest.mark.anyio
 async def test_respond_handles_confirmation_in_next_message() -> None:
+    """Проверяет показ подтверждения и продолжение той же задачи после ответа «да»."""
     class ConfirmingAgent(ResettableAgent):
         async def run(self, message, confirmation=None, session_id="default") -> str:
             self.calls.append(message)
@@ -182,6 +188,7 @@ async def test_respond_handles_confirmation_in_next_message() -> None:
 
 @pytest.mark.anyio
 async def test_clear_chat_cancels_running_task() -> None:
+    """Проверяет отмену активной задачи и очистку сессии кнопкой «Очистить»."""
     agent = ResettableAgent()
     demo = build_gradio_ui(agent)
     clear_chat = get_handler(demo, "clear_chat")
@@ -200,6 +207,7 @@ async def test_clear_chat_cancels_running_task() -> None:
 
 @pytest.mark.anyio
 async def test_completed_failed_task_is_cleared() -> None:
+    """Проверяет очистку завершённой задачи и извлечение её исключения."""
     async def fail() -> None:
         raise RuntimeError("background failure")
 
@@ -215,6 +223,7 @@ async def test_completed_failed_task_is_cleared() -> None:
 
 @pytest.mark.anyio
 async def test_run_gradio_starts_uvicorn_with_mounted_app(monkeypatch) -> None:
+    """Проверяет монтирование Gradio в FastAPI и запуск Uvicorn с нужными host и port."""
     events = []
 
     class Demo:

@@ -7,6 +7,7 @@ from mcp_assistant.client.confirmation import CLIConfirmation, GradioConfirmatio
 
 @pytest.mark.anyio
 async def test_cli_confirm_delegates_without_reason(monkeypatch) -> None:
+    """Проверяет делегирование CLI confirm() в confirm_with_reason() с пустой причиной."""
     confirmation = CLIConfirmation()
     captured = {}
 
@@ -26,6 +27,7 @@ async def test_cli_confirm_delegates_without_reason(monkeypatch) -> None:
 
 @pytest.mark.anyio
 async def test_gradio_confirmation_request_resolve_and_cleanup() -> None:
+    """Проверяет создание, подтверждение и очистку Gradio-запроса подтверждения."""
     confirmation = GradioConfirmation(timeout=1)
     request_task = asyncio.create_task(
         confirmation.confirm_with_reason(
@@ -49,6 +51,7 @@ async def test_gradio_confirmation_request_resolve_and_cleanup() -> None:
 
 @pytest.mark.anyio
 async def test_gradio_confirmation_timeout_denies_and_cleans_state() -> None:
+    """Проверяет отказ по таймауту и очистку состояния GradioConfirmation."""
     confirmation = GradioConfirmation(timeout=0.01)
 
     approved = await confirmation.confirm("add_comment", {"ticket_id": 1})
@@ -60,6 +63,7 @@ async def test_gradio_confirmation_timeout_denies_and_cleans_state() -> None:
 
 @pytest.mark.anyio
 async def test_gradio_confirmation_cancellation_cleans_state() -> None:
+    """Проверяет очистку состояния GradioConfirmation после отмены задачи."""
     confirmation = GradioConfirmation(timeout=1)
     request_task = asyncio.create_task(confirmation.confirm("update_status", {}))
     await asyncio.wait_for(confirmation.wait_requested(), timeout=1)

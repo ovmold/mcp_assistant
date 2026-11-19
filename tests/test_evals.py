@@ -10,6 +10,7 @@ from mcp_assistant import config as conf
 
 
 def test_init_eval_db_creates_parent_directory(tmp_path, monkeypatch) -> None:
+    """Проверяет создание каталога и заполнение временной eval-БД."""
     db_path = tmp_path / "nested" / "evals.db"
     monkeypatch.setattr(conf, "DB_PATH", db_path)
 
@@ -21,6 +22,7 @@ def test_init_eval_db_creates_parent_directory(tmp_path, monkeypatch) -> None:
 
 
 def test_all_scenarios_use_valid_new_format() -> None:
+    """Проверяет валидность и уникальность ID всех YAML-сценариев."""
     path = Path(__file__).resolve().parent.parent / "evals" / "scenarios.yaml"
     scenarios = yaml.safe_load(path.read_text(encoding="utf-8"))
 
@@ -31,6 +33,7 @@ def test_all_scenarios_use_valid_new_format() -> None:
 
 
 def test_scenario_id_cannot_contain_spaces() -> None:
+    """Проверяет отклонение ID сценария с пробелами."""
     with pytest.raises(ValueError, match="пробелы"):
         validate_scenarios([{
             "id": "invalid id",
@@ -42,6 +45,7 @@ def test_scenario_id_cannot_contain_spaces() -> None:
 
 @pytest.mark.anyio
 async def test_multi_turn_scenario_checks_calls_and_db(tmp_path, monkeypatch) -> None:
+    """Проверяет многоходовой сценарий, вызовы, подтверждение и новый комментарий в БД."""
     db_path = tmp_path / "evals.db"
     monkeypatch.setattr(conf, "DB_PATH", db_path)
     init_eval_db()
@@ -116,6 +120,7 @@ async def test_multi_turn_scenario_checks_calls_and_db(tmp_path, monkeypatch) ->
 
 @pytest.mark.anyio
 async def test_scenario_releases_db_for_next_run(tmp_path, monkeypatch) -> None:
+    """Проверяет закрытие БД между повторными прогонами сценария."""
     db_path = tmp_path / "evals.db"
     monkeypatch.setattr(conf, "DB_PATH", db_path)
 
@@ -143,6 +148,7 @@ async def test_scenario_releases_db_for_next_run(tmp_path, monkeypatch) -> None:
 
 
 def test_configure_eval_tickets_server_passes_only_eval_paths(tmp_path, monkeypatch) -> None:
+    """Проверяет передачу временных DATA_DIR и DB_PATH только stdio-серверу tickets."""
     data_dir = tmp_path / "eval_data"
     db_path = data_dir / "tickets.db"
     monkeypatch.setattr(conf, "DATA_DIR", data_dir)
@@ -184,6 +190,7 @@ def test_configure_eval_tickets_server_passes_only_eval_paths(tmp_path, monkeypa
 async def test_parallel_ticket_and_kb_accepts_both_read_methods(
     tmp_path, monkeypatch, ticket_tool, ticket_args
 ) -> None:
+    """Проверяет, что сценарий принимает get_ticket или read_resource в параллельном пакете."""
     monkeypatch.setattr(conf, "DB_PATH", tmp_path / "evals.db")
     init_eval_db()
 
@@ -223,6 +230,7 @@ async def test_parallel_ticket_and_kb_accepts_both_read_methods(
 
 @pytest.mark.anyio
 async def test_scenario_metrics_distinguish_check_types(tmp_path, monkeypatch) -> None:
+    """Проверяет независимые результаты проверок вызовов, подтверждений, ответа, БД и токенов."""
     monkeypatch.setattr(conf, "DB_PATH", tmp_path / "evals.db")
     init_eval_db()
 
@@ -268,6 +276,7 @@ async def test_scenario_metrics_distinguish_check_types(tmp_path, monkeypatch) -
 
 
 def test_print_results_includes_detailed_and_grouped_metrics(monkeypatch, capsys) -> None:
+    """Проверяет сводные метрики, стабильность и разрезы по category и severity."""
     for name in ("DATA_DIR", "TRACE_DIR", "DB_PATH"):
         monkeypatch.setenv(name, "unused-in-report-test")
 

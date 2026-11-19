@@ -10,6 +10,7 @@ from mcp_assistant.storage.models import TICKET_PRIORITIES, TICKET_STATUSES
 
 @pytest.mark.anyio
 async def test_tickets_search_via_mcp(tickets_client) -> None:
+    """Проверяет поиск тикетов через настоящий MCP-сервер в памяти."""
     result = await tickets_client.call_tool("search_tickets", {"query": "502"})
     assert not result.is_error
     assert result.content
@@ -18,6 +19,7 @@ async def test_tickets_search_via_mcp(tickets_client) -> None:
 
 @pytest.mark.anyio
 async def test_tickets_get_ticket_via_mcp(tickets_client) -> None:
+    """Проверяет получение тикета через MCP."""
     result = await tickets_client.call_tool("get_ticket", {"ticket_id": 1})
     assert not result.is_error
     assert "Ошибка 502" in result.content[0].text
@@ -25,6 +27,7 @@ async def test_tickets_get_ticket_via_mcp(tickets_client) -> None:
 
 @pytest.mark.anyio
 async def test_tickets_filter_only_search_via_mcp(tickets_client) -> None:
+    """Проверяет поиск только по фильтрам без query через MCP."""
     result = await tickets_client.call_tool("search_tickets", {
         "status": "open",
         "priority": "high",
@@ -39,6 +42,7 @@ async def test_tickets_filter_only_search_via_mcp(tickets_client) -> None:
 
 @pytest.mark.anyio
 async def test_tickets_date_filter_via_mcp(tickets_client) -> None:
+    """Проверяет поиск тикетов по диапазону дат через MCP."""
     result = await tickets_client.call_tool("search_tickets", {
         "created_from": "2026-10-14",
     })
@@ -52,6 +56,7 @@ async def test_tickets_date_filter_via_mcp(tickets_client) -> None:
 
 @pytest.mark.anyio
 async def test_add_comment_author_is_required_via_mcp(tickets_client) -> None:
+    """Проверяет обязательность author в схеме add_comment через MCP."""
     result = await tickets_client.list_tools()
     add_comment = next(tool for tool in result.tools if tool.name == "add_comment")
 
@@ -61,6 +66,7 @@ async def test_add_comment_author_is_required_via_mcp(tickets_client) -> None:
 
 @pytest.mark.anyio
 async def test_ticket_tools_expose_status_and_priority_enums(tickets_client) -> None:
+    """Проверяет наличие допустимых enum для status и priority в MCP-схемах."""
     result = await tickets_client.list_tools()
     tools = {tool.name: tool for tool in result.tools}
 
@@ -73,6 +79,7 @@ async def test_ticket_tools_expose_status_and_priority_enums(tickets_client) -> 
 
 @pytest.mark.anyio
 async def test_tickets_empty_query_returns_error_via_mcp(tickets_client) -> None:
+    """Проверяет ошибку пустого query без фильтров через MCP."""
     result = await tickets_client.call_tool("search_tickets", {"query": ""})
     assert result.is_error
     assert result.content
@@ -81,6 +88,7 @@ async def test_tickets_empty_query_returns_error_via_mcp(tickets_client) -> None
 
 @pytest.mark.anyio
 async def test_tickets_add_comment_returns_result_via_mcp(tickets_client) -> None:
+    """Проверяет структурированный результат добавления комментария через MCP."""
     result = await tickets_client.call_tool("add_comment", {
         "ticket_id": 2,
         "text": "Комментарий",
@@ -96,6 +104,7 @@ async def test_tickets_add_comment_returns_result_via_mcp(tickets_client) -> Non
 
 @pytest.mark.anyio
 async def test_tickets_update_status_via_mcp(tickets_client) -> None:
+    """Проверяет успешное изменение статуса и создание комментария через MCP."""
     result = await tickets_client.call_tool(
         "update_status",
         {"ticket_id": 1, "status": "closed", "comment": "Закрыто"},
@@ -111,6 +120,7 @@ async def test_tickets_update_status_via_mcp(tickets_client) -> None:
 
 @pytest.mark.anyio
 async def test_tickets_update_status_invalid_via_mcp(tickets_client) -> None:
+    """Проверяет ошибку недопустимого статуса через MCP."""
     result = await tickets_client.call_tool(
         "update_status",
         {"ticket_id": 1, "status": "garbage", "comment": "test"},
@@ -126,6 +136,7 @@ async def test_tickets_update_status_invalid_via_mcp(tickets_client) -> None:
 
 @pytest.mark.anyio
 async def test_knowledge_search_via_mcp(knowledge_client) -> None:
+    """Проверяет поиск по базе знаний через MCP."""
     result = await knowledge_client.call_tool(
         "search_kb", {"query": "оплата", "top_k": 3},
     )
@@ -136,6 +147,7 @@ async def test_knowledge_search_via_mcp(knowledge_client) -> None:
 
 @pytest.mark.anyio
 async def test_knowledge_path_traversal_via_mcp(knowledge_client) -> None:
+    """Проверяет блокировку path traversal при чтении статьи через MCP."""
     result = await knowledge_client.call_tool(
                 "get_article", {"article_type": "../secret"},
             )

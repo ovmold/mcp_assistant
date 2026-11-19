@@ -6,6 +6,7 @@ from mcp_assistant import seed
 
 
 def test_seed_recreates_database_and_kb(tmp_path, monkeypatch) -> None:
+    """Проверяет полное пересоздание БД и базы знаний seed-скриптом."""
     data_dir = tmp_path / "data"
     kb_dir = data_dir / "kb"
     kb_dir.mkdir(parents=True)

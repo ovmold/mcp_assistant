@@ -84,6 +84,7 @@ def test_search_case_insensitive(temp_db) -> None:
 
 @pytest.mark.parametrize("query", ["платёж", "платеж"])
 def test_search_normalizes_russian_e_and_yo(temp_db, query) -> None:
+    """Проверяет одинаковый поиск по словам с е и ё."""
     conn = sqlite3.connect(temp_db)
     conn.execute(
         "INSERT INTO tickets (id, subject, body, status, priority, client, "
@@ -101,6 +102,7 @@ def test_search_normalizes_russian_e_and_yo(temp_db, query) -> None:
 
 
 def test_search_leading_hyphen_is_literal_text(temp_db) -> None:
+    """Проверяет, что ведущий дефис не воспринимается как оператор FTS5."""
     result = search_tickets("-502")
 
     assert result
@@ -109,6 +111,7 @@ def test_search_leading_hyphen_is_literal_text(temp_db) -> None:
 
 @pytest.mark.parametrize("query", ["оплата OR 502", "OR", "AND", "NOT"])
 def test_search_fts_operators_are_literal_text(temp_db, query) -> None:
+    """Проверяет безопасную обработку FTS5-операторов как обычного текста."""
     assert isinstance(search_tickets(query), list)
 
 
@@ -151,6 +154,7 @@ def test_search_filter_by_customer(temp_db) -> None:
     ({"customer": "Globex"}, {1, 4}),
 ])
 def test_search_with_filters_only(temp_db, filters, expected_ids) -> None:
+    """Проверяет поиск тикетов только по status, priority или customer."""
     result = search_tickets(**filters)
 
     assert {ticket.id for ticket in result} == expected_ids
@@ -158,6 +162,7 @@ def test_search_with_filters_only(temp_db, filters, expected_ids) -> None:
 
 @pytest.mark.parametrize("query", [None, "", "   "])
 def test_search_with_empty_query_and_filters(temp_db, query) -> None:
+    """Проверяет поиск по фильтрам при пустом query."""
     result = search_tickets(
         query=query,
         status="open",
@@ -174,17 +179,20 @@ def test_search_with_empty_query_and_filters(temp_db, query) -> None:
     ({"created_from": "2026-10-10", "created_to": "2026-10-14"}, {2, 3, 4}),
 ])
 def test_search_by_created_date(temp_db, filters, expected_ids) -> None:
+    """Проверяет фильтрацию по created_from и created_to, включая весь день."""
     result = search_tickets(**filters)
 
     assert {ticket.id for ticket in result} == expected_ids
 
 
 def test_search_rejects_invalid_date(temp_db) -> None:
+    """Проверяет ошибку при невалидной дате фильтра."""
     with pytest.raises(ToolError, match=r"created_from.*ISO 8601"):
         search_tickets(created_from="не дата")
 
 
 def test_search_rejects_reversed_date_range(temp_db) -> None:
+    """Проверяет ошибку, если created_from позже created_to."""
     with pytest.raises(ToolError, match=r"created_from.*позже"):
         search_tickets(
             created_from="2026-10-15",
@@ -333,6 +341,7 @@ def test_add_comment(temp_db) -> None:
 
 
 def test_add_comment_requires_nonempty_author(temp_db) -> None:
+    """Проверяет отклонение комментария с пустым автором."""
     with pytest.raises(ToolError, match=r"(?i)author пуст"):
         add_comment(2, "Комментарий", author="   ")
 
@@ -379,6 +388,7 @@ def test_update_status_missing_ticket(temp_db) -> None:
 
 
 def test_update_status_rejects_unchanged_status(temp_db) -> None:
+    """Проверяет запрет записи, если новый статус совпадает со старым."""
     previous_updated_at = get_ticket(1).updated_at
 
     with pytest.raises(ToolError, match=r"уже имеет статус open"):
@@ -391,6 +401,7 @@ def test_update_status_rejects_unchanged_status(temp_db) -> None:
 
 
 def test_update_status_cannot_reopen_closed_ticket(temp_db) -> None:
+    """Проверяет запрет перехода closed → open."""
     update_status(1, "closed", "Закрыт")
 
     with pytest.raises(ToolError, match=r"closed на open"):
@@ -402,6 +413,7 @@ def test_update_status_cannot_reopen_closed_ticket(temp_db) -> None:
 
 
 def test_db_cursor_enables_foreign_keys(temp_db) -> None:
+    """Проверяет включение PRAGMA foreign_keys=ON для каждого SQLite-соединения."""
     with _db_cursor() as cursor:
         assert cursor.execute("PRAGMA foreign_keys").fetchone()[0] == 1
         with pytest.raises(sqlite3.IntegrityError):
@@ -413,6 +425,7 @@ def test_db_cursor_enables_foreign_keys(temp_db) -> None:
 
 
 def test_fts_update_trigger_is_limited_to_indexed_columns(temp_db) -> None:
+    """Проверяет, что FTS-триггер обновления срабатывает только для subject и body."""
     conn = sqlite3.connect(temp_db)
     sql = conn.execute(
         "SELECT sql FROM sqlite_master WHERE name = 'tickets_au'"

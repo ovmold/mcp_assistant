@@ -85,6 +85,7 @@ def main_mocks(monkeypatch) -> None:
 
 @pytest.mark.anyio
 async def test_main_closes_resources_after_ui_stops(main_mocks) -> None:
+    """Проверяет закрытие LLM, MCP и Tracer после завершения UI."""
     result = await main_module.main()
 
     assert result == 0
@@ -95,6 +96,7 @@ async def test_main_closes_resources_after_ui_stops(main_mocks) -> None:
 
 @pytest.mark.anyio
 async def test_main_closes_resources_when_mcp_connection_fails(main_mocks) -> None:
+    """Проверяет закрытие созданных ресурсов при ошибке подключения MCP."""
     FakeMCPClient.connect_error = RuntimeError("connection failed")
 
     result = await main_module.main()
@@ -108,6 +110,7 @@ async def test_main_closes_resources_when_mcp_connection_fails(main_mocks) -> No
 
 @pytest.mark.anyio
 async def test_main_reports_configuration_error(main_mocks, monkeypatch, capsys) -> None:
+    """Проверяет код 1 и сообщение при ошибке загрузки конфигурации."""
     def fail_config(path):
         raise ValueError("invalid config")
 
@@ -120,6 +123,7 @@ async def test_main_reports_configuration_error(main_mocks, monkeypatch, capsys)
 
 @pytest.mark.anyio
 async def test_main_reports_llm_initialization_error(main_mocks, monkeypatch, capsys) -> None:
+    """Проверяет код 1 и сообщение при ошибке создания LLM-клиента."""
     def fail_llm(timeout):
         raise RuntimeError("LLM unavailable")
 
@@ -132,6 +136,7 @@ async def test_main_reports_llm_initialization_error(main_mocks, monkeypatch, ca
 
 @pytest.mark.anyio
 async def test_main_starts_gradio_and_closes_resources(main_mocks, monkeypatch) -> None:
+    """Проверяет запуск Gradio с host/port и последующее закрытие ресурсов."""
     captured = {}
 
     async def run_gradio(agent, host, port, session_timeout) -> None:
@@ -151,6 +156,7 @@ async def test_main_starts_gradio_and_closes_resources(main_mocks, monkeypatch) 
 
 @pytest.mark.anyio
 async def test_main_closes_llm_when_mcp_shutdown_fails(main_mocks, monkeypatch) -> None:
+    """Проверяет закрытие LLM даже при ошибке закрытия MCP."""
     async def fail_close(self) -> None:
         self.closed = True
         raise RuntimeError("close failed")
@@ -165,6 +171,7 @@ async def test_main_closes_llm_when_mcp_shutdown_fails(main_mocks, monkeypatch) 
 
 
 def test_main_module_returns_130_on_keyboard_interrupt(monkeypatch, capsys) -> None:
+    """Проверяет код завершения 130 при прерывании пользователем Ctrl+C."""
     def interrupt(coroutine):
         coroutine.close()
         raise KeyboardInterrupt

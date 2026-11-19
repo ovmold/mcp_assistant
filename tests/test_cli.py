@@ -28,6 +28,7 @@ def install_inputs(monkeypatch, values) -> None:
 
 @pytest.mark.anyio
 async def test_cli_handles_empty_input_reset_and_exit(monkeypatch, capsys) -> None:
+    """Проверяет пропуск пустого ввода, очистку истории и завершение CLI-командами."""
     agent = FakeAgent()
     install_inputs(monkeypatch, ["", "/reset", "/clear", "вопрос", "/exit"])
 
@@ -43,6 +44,7 @@ async def test_cli_handles_empty_input_reset_and_exit(monkeypatch, capsys) -> No
 
 @pytest.mark.anyio
 async def test_cli_reports_agent_error_and_quits(monkeypatch, capsys) -> None:
+    """Проверяет вывод ошибки агента и выход через /quit."""
     agent = FakeAgent(fail_on="ошибка")
     install_inputs(monkeypatch, ["ошибка", "/quit"])
 
@@ -56,6 +58,7 @@ async def test_cli_reports_agent_error_and_quits(monkeypatch, capsys) -> None:
 @pytest.mark.anyio
 @pytest.mark.parametrize("exception", [EOFError, KeyboardInterrupt])
 async def test_cli_exits_on_input_interruption(monkeypatch, capsys, exception) -> None:
+    """Проверяет корректный выход из CLI при EOFError или KeyboardInterrupt."""
     def interrupted_input(prompt=""):
         raise exception
 

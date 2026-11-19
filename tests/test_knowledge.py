@@ -46,6 +46,7 @@ def test_search_kb_limit(temp_kb) -> None:
 
 
 def test_search_kb_exact_code_outranks_similar_code(temp_kb) -> None:
+    """Проверяет приоритет статьи payment-502 над похожим кодом upload-500."""
     (temp_kb / "upload-500.md").write_text(
         "# Ошибка 500 при загрузке\n\nОшибка при загрузке аватара.",
         encoding="utf-8",
@@ -57,6 +58,7 @@ def test_search_kb_exact_code_outranks_similar_code(temp_kb) -> None:
 
 
 def test_search_kb_password_reset_excludes_unrelated_articles(temp_kb) -> None:
+    """Проверяет ранжирование статьи о сбросе пароля и исключение нерелевантных статей."""
     (temp_kb / "password-reset-email.md").write_text(
         "# Сброс пароля\n\nИнструкция по сбросу пароля и письмо для восстановления.",
         encoding="utf-8",
@@ -163,6 +165,7 @@ def test_get_article_resource_unexpected_read_error(temp_kb, monkeypatch) -> Non
 
 
 def test_main_initializes_kb_before_serving(monkeypatch) -> None:
+    """Проверяет загрузку окружения и инициализацию базы знаний до запуска MCP-сервера."""
     events = []
     monkeypatch.setattr(
         knowledge_module.conf, "load_env", lambda path: events.append("env")

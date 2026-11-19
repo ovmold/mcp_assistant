@@ -70,6 +70,7 @@ def make_openai_response(content=None, calls=None) -> SimpleNamespace:
 
 @pytest.mark.anyio
 async def test_openai_chat_sends_tools_and_maps_text_response() -> None:
+    """Проверяет преобразование инструментов и текстового ответа OpenAI во внутренний формат."""
     sdk = FakeOpenAI(responses=[make_openai_response(content="Готово")])
     client = OpenAILLMClient(sdk, "gpt-test")
     functions = [{
@@ -94,6 +95,7 @@ async def test_openai_chat_sends_tools_and_maps_text_response() -> None:
 
 @pytest.mark.anyio
 async def test_openai_parallel_tool_calls_keep_ids_and_raw_arguments() -> None:
+    """Проверяет сохранение ID и JSON-аргументов параллельных вызовов OpenAI."""
     sdk = FakeOpenAI(responses=[make_openai_response(
         content="Проверю оба источника",
         calls=[
@@ -114,6 +116,7 @@ async def test_openai_parallel_tool_calls_keep_ids_and_raw_arguments() -> None:
 
 
 def test_openai_history_expands_parallel_results_into_tool_messages() -> None:
+    """Проверяет разворачивание внутренней истории в assistant- и tool-сообщения OpenAI."""
     messages = [
         {"role": "system", "content": "system"},
         {"role": "user", "content": "question"},
@@ -184,6 +187,7 @@ def test_openai_history_expands_parallel_results_into_tool_messages() -> None:
 
 
 def test_create_llm_defaults_to_gigachat(monkeypatch) -> None:
+    """Проверяет выбор GigaChat по умолчанию и передачу настроек SDK."""
     FakeGigaChat.instances = []
     monkeypatch.setattr(llm_module, "GigaChat", FakeGigaChat)
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
@@ -207,6 +211,7 @@ def test_create_llm_defaults_to_gigachat(monkeypatch) -> None:
 
 
 def test_create_llm_selects_openai(monkeypatch) -> None:
+    """Проверяет выбор OpenAI и передачу ключа, модели, base_url и таймаута."""
     FakeOpenAI.instances = []
     monkeypatch.setattr(llm_module, "OpenAI", FakeOpenAI)
     monkeypatch.setenv("LLM_PROVIDER", " OpenAI ")
@@ -227,6 +232,7 @@ def test_create_llm_selects_openai(monkeypatch) -> None:
 
 
 def test_create_llm_rejects_unknown_provider(monkeypatch) -> None:
+    """Проверяет ошибку при неизвестном LLM_PROVIDER."""
     monkeypatch.setenv("LLM_PROVIDER", "unknown")
     monkeypatch.setenv("MODEL", "test")
 
@@ -235,6 +241,7 @@ def test_create_llm_rejects_unknown_provider(monkeypatch) -> None:
 
 
 def test_openai_requires_api_key(monkeypatch) -> None:
+    """Проверяет обязательность OPENAI_API_KEY для OpenAI."""
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("MODEL", "gpt-test")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -245,6 +252,7 @@ def test_openai_requires_api_key(monkeypatch) -> None:
 
 @pytest.mark.anyio
 async def test_agent_completes_openai_tool_round_trip() -> None:
+    """Проверяет полный цикл вызова инструмента агентом через OpenAI-адаптер."""
     sdk = FakeOpenAI(responses=[
         make_openai_response(calls=[(
             "call-1",
@@ -307,6 +315,7 @@ async def test_agent_completes_openai_tool_round_trip() -> None:
 
 @pytest.mark.anyio
 async def test_gigachat_chat_without_functions() -> None:
+    """Проверяет GigaChat-запрос без инструментов и включение parallel_tool_calls."""
     captured = {}
 
     def create(request):
@@ -324,6 +333,7 @@ async def test_gigachat_chat_without_functions() -> None:
 
 
 def test_openai_history_preserves_plain_assistant_content() -> None:
+    """Проверяет сохранение обычного текста assistant и пустых tool-результатов при преобразовании."""
     converted = OpenAILLMClient._to_openai_messages([
         {"role": "assistant", "content": "Обычный ответ"},
         {"role": "assistant", "content": [{"text": "Только текст"}]},
@@ -337,6 +347,7 @@ def test_openai_history_preserves_plain_assistant_content() -> None:
 
 
 def test_openai_response_without_content_and_usage() -> None:
+    """Проверяет преобразование ответа OpenAI без текста, вызовов и статистики токенов."""
     response = make_openai_response()
     response.usage = None
 
@@ -348,6 +359,7 @@ def test_openai_response_without_content_and_usage() -> None:
 
 
 def test_create_llm_requires_model(monkeypatch) -> None:
+    """Проверяет обязательность переменной MODEL при создании LLM-клиента."""
     monkeypatch.delenv("MODEL", raising=False)
 
     with pytest.raises(ValueError, match="MODEL"):
@@ -355,6 +367,7 @@ def test_create_llm_requires_model(monkeypatch) -> None:
 
 
 def test_gigachat_requires_auth_key(monkeypatch) -> None:
+    """Проверяет обязательность GIGACHAT_AUTH_KEY для GigaChat."""
     monkeypatch.setenv("LLM_PROVIDER", "gigachat")
     monkeypatch.setenv("MODEL", "giga-test")
     monkeypatch.delenv("GIGACHAT_AUTH_KEY", raising=False)
@@ -364,6 +377,7 @@ def test_gigachat_requires_auth_key(monkeypatch) -> None:
 
 
 def test_gigachat_requires_base_url(monkeypatch) -> None:
+    """Проверяет обязательность GIGACHAT_BASE_URL для GigaChat."""
     monkeypatch.setenv("LLM_PROVIDER", "gigachat")
     monkeypatch.setenv("MODEL", "giga-test")
     monkeypatch.setenv("GIGACHAT_AUTH_KEY", "secret")
@@ -374,6 +388,7 @@ def test_gigachat_requires_base_url(monkeypatch) -> None:
 
 
 def test_create_llm_openai_without_base_url(monkeypatch) -> None:
+    """Проверяет создание OpenAI-клиента без необязательного OPENAI_BASE_URL."""
     FakeOpenAI.instances = []
     monkeypatch.setattr(llm_module, "OpenAI", FakeOpenAI)
     monkeypatch.setenv("LLM_PROVIDER", "openai")

@@ -9,6 +9,7 @@ from mcp_assistant.client.mcp_client import MCPClient
 
 @pytest.mark.anyio
 async def test_stdio_server_does_not_inherit_parent_secrets(monkeypatch) -> None:
+    """Проверяет, что stdio-сервер получает безопасное окружение без секретов родителя."""
     monkeypatch.setenv("GIGACHAT_AUTH_KEY", "test-secret")
     captured = {}
 
@@ -61,6 +62,7 @@ async def test_stdio_server_does_not_inherit_parent_secrets(monkeypatch) -> None
 
 @pytest.mark.anyio
 async def test_connect_all_reports_root_causes_and_rejects_partial_startup(monkeypatch) -> None:
+    """Проверяет разворачивание вложенных ошибок и запрет частичного подключения MCP."""
     client = MCPClient({"servers": [
         {"name": "tickets"},
         {"name": "knowledge"},
@@ -88,6 +90,7 @@ async def test_connect_all_reports_root_causes_and_rejects_partial_startup(monke
 
 @pytest.mark.anyio
 async def test_read_resource_and_get_prompt(tickets_client) -> None:
+    """Проверяет чтение ресурса и получение промпта через MCPClient."""
     client = MCPClient({"servers": []})
     client._clients["tickets"] = tickets_client
     client._servers["tickets"] = {"tool_timeout": 5.0}
@@ -105,6 +108,7 @@ async def test_read_resource_and_get_prompt(tickets_client) -> None:
 
 @pytest.mark.anyio
 async def test_connect_rejects_unknown_transport() -> None:
+    """Проверяет отклонение неизвестного MCP-транспорта."""
     client = MCPClient({"servers": []})
 
     with pytest.raises(ValueError, match="Неизвестный транспорт"):
@@ -113,6 +117,7 @@ async def test_connect_rejects_unknown_transport() -> None:
 
 @pytest.mark.anyio
 async def test_connect_all_rejects_empty_configuration() -> None:
+    """Проверяет ошибку, если не настроен ни один MCP-сервер."""
     client = MCPClient({"servers": []})
 
     with pytest.raises(RuntimeError, match="ни к одному серверу"):
@@ -121,6 +126,7 @@ async def test_connect_all_rejects_empty_configuration() -> None:
 
 @pytest.mark.anyio
 async def test_close_all_clears_state_after_close_error(capsys) -> None:
+    """Проверяет очистку состояния MCPClient даже при ошибке закрытия соединений."""
     class BrokenStack:
         async def aclose(self) -> None:
             raise RuntimeError("close failed")
@@ -144,6 +150,7 @@ async def test_close_all_clears_state_after_close_error(capsys) -> None:
 
 
 def test_capability_getters_return_independent_dictionaries() -> None:
+    """Проверяет, что getters возможностей возвращают независимые копии словарей."""
     client = MCPClient({"servers": []})
     client._tools["tickets"] = []
     client._resources["tickets"] = []
@@ -164,6 +171,7 @@ def test_capability_getters_return_independent_dictionaries() -> None:
 
 
 def test_get_client_and_timeout_validation() -> None:
+    """Проверяет ошибку для неподключённого сервера и выбор явного или серверного таймаута."""
     client = MCPClient({"servers": [{"name": "tickets", "tool_timeout": 5.0}]})
 
     with pytest.raises(ValueError, match="не подключён"):
@@ -176,6 +184,7 @@ def test_get_client_and_timeout_validation() -> None:
 
 @pytest.mark.anyio
 async def test_call_tool_and_other_operations_use_connection() -> None:
+    """Проверяет маршрутизацию вызовов инструментов, ресурсов и промптов через нужное подключение."""
     class Connection:
         async def call_tool(self, name, arguments) -> SimpleNamespace:
             return SimpleNamespace(name=name, arguments=arguments)
@@ -200,6 +209,7 @@ async def test_call_tool_and_other_operations_use_connection() -> None:
 
 @pytest.mark.anyio
 async def test_call_tool_timeout_uses_server_limit() -> None:
+    """Проверяет применение tool_timeout сервера через asyncio.wait_for()."""
     class SlowConnection:
         async def call_tool(self, name, arguments) -> None:
             await asyncio.sleep(1)
